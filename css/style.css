@@ -1,0 +1,584 @@
+.title  { text-align: center; }
+.todo   { font-family: monospace; color: red; }
+.done   { color: green; }
+.tag    { background-color: #eee; font-family: monospace;
+          padding: 2px; font-size: 80%; font-weight: normal; }
+.timestamp { color: #bebebe; }
+.timestamp-kwd { color: #5f9ea0; }
+.right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+.left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+.center { margin-left: auto; margin-right: auto; text-align: center; }
+.underline { text-decoration: underline; }
+#postamble p, #preamble p { font-size: 90%; margin: .2em; }
+p.verse { margin-left: 3%; }
+pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+}
+pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+}
+pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+}
+pre.src:hover:before { display: inline;}
+pre.src-sh:before    { content: 'sh'; }
+pre.src-bash:before  { content: 'bash'; }
+pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+pre.src-asm:before { content: 'asm'; }
+pre.src-forth:before    { content: 'forth'; }
+pre.src-lisp:before { content: 'lisp'; }
+pre.src-R:before     { content: 'R'; }
+pre.src-perl:before  { content: 'Perl'; }
+pre.src-java:before  { content: 'Java'; }
+pre.src-sql:before   { content: 'SQL'; }
+
+table { border-collapse:collapse; }
+caption.t-above { caption-side: top; }
+caption.t-bottom { caption-side: bottom; }
+td, th { vertical-align:top;  }
+th.right  { text-align: center;  }
+th.left   { text-align: center;   }
+th.center { text-align: center; }
+td.right  { text-align: right;  }
+td.left   { text-align: left;   }
+td.center { text-align: center; }
+dt { font-weight: bold; }
+.footpara:nth-child(2) { display: inline; }
+.footpara { display: block; }
+.footdef  { margin-bottom: 1em; }
+.figure { padding: 1em; }
+.figure p { text-align: center; }
+.inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+}
+#org-div-home-and-up
+{ text-align: right; font-size: 70%; white-space: nowrap; }
+textarea { overflow-x: auto; }
+.linenr { font-size: smaller }
+.code-highlighted { background-color: #ffff00; }
+.org-info-js_info-navigation { border-style: none; }
+#org-info-js_console-label
+{ font-size: 10px; font-weight: bold; white-space: nowrap; }
+.org-info-js_search-highlight
+{ background-color: #ffff00; color: #000000; font-weight: bold; }
+
+
+
+body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.4;
+    color: #33333f;
+}
+
+code {
+    font-family: monospace;
+    font-size: 16px;
+}
+
+p>code, li>code {
+    background-color: #eee;
+    padding: 0.25em;
+}
+
+h1, h2, h3 {
+    font-family: Helvetica, Arial, sans-serif;
+}
+
+h2 {
+    border-bottom: 1px solid #f0c;
+    padding-bottom: 0.5em;
+    font-size: 1.75em;
+}
+
+h3 {
+    margin-top: 2em;
+    font-size: 1.5em;
+}
+
+h4 {
+    font-size: 1.25em;
+}
+
+h5 {
+    font-size: 1em;
+}
+
+h2 code, h3 code, h4 code, h5 code, td code {
+    font-family: inherit !important;
+    font-size: inherit !important;
+}
+
+td code {
+    font-weight: bold;
+}
+
+a:link, a:hover, a:visited {
+                     text-decoration: none;
+                     color: black;
+                 }
+
+a:link {
+    background: #ff8;
+    padding: 0 0.25em 0 0.25em;
+}
+
+a:visited {
+    color: #666;
+    background: #ffc;
+}
+
+a:link:hover,
+a:visited:hover {
+    background: #ff0;
+}
+
+a[href^="http"] {
+    background: #bff;
+}
+
+a[href^="http"]:visited {
+    background: #dff;
+}
+
+a[href^="http"]:link:hover,
+a[href^="http"]:visited:hover {
+    background: #0ff;
+}
+
+a[href^="http"]:after {
+    content: "\21B3";
+    padding-left: 0.2em;
+}
+
+#meta {
+    margin-top: 2em;
+}
+
+#table-of-contents a:link,
+#table-of-contents a:visited {
+    color: black;
+    background: transparent;
+}
+
+#table-of-contents {
+    line-height: 1.2;
+}
+#table-of-contents h2 {
+    border-bottom: 0;
+}
+
+#table-of-contents ul {
+    list-style: none;
+    padding-left:0;
+    font-weight: normal;
+}
+
+
+#table-of-contents div>ul>li {
+    margin-top: 1em;
+    font-weight: bold;
+}
+
+#table-of-contents div>ul>li>ul {
+    padding-left: 1em;
+}
+
+
+#table-of-contents .tag {
+    display: none;
+}
+
+#table-of-contents .todo,
+#table-of-contents .done {
+    font-size: 80%;
+}
+
+#table-of-contents ol>li {
+    margin-top: 1em;
+}
+
+table {
+    width: 100%;
+}
+
+table, th, td {
+    border: 1px solid #666;
+}
+
+th, td {
+    padding: 0.5em;
+    text-align: left;
+}
+
+tbody tr:nth-child(odd) {
+    background-color: #eee;
+}
+
+img {
+    max-width: 99%;
+}
+
+div.notice {
+    position: relative;
+    margin: 0 1.2em;
+    padding: 0.25em 1em;
+    border-left: 4px solid;
+}
+
+table + div.notice {
+    margin-top: 2em;
+}
+
+div.notice a {
+    background: transparent !important;
+    border-bottom: 1px dotted;
+}
+
+div.notice a[href^="http"]:after {
+    background: transparent !important;
+}
+
+div.notice:before {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 0.25em 0.5em 0;
+    font-size: 60%;
+    border-bottom-left-radius: 0.5em;
+}
+
+.notice-warning {
+    background: #fcc;
+    color: #600;
+}
+
+.notice-example {
+    background: #def;
+    color: #069;
+}
+
+.notice-info {
+    background: #efe;
+    color: #060;
+}
+
+.notice-warning a {
+    color: #600;
+}
+
+.notice-example a {
+    color: #069;
+}
+
+.notice-info a {
+    color: #060;
+}
+
+div.notice-warning:before {
+    content: "WARNING";
+    background: #c99;
+    color: #fcc;
+}
+
+div.notice-example:before {
+    content: "EXAMPLE";
+    background: #abc;
+    color: #def;
+}
+
+div.notice-info:before {
+    content: "INFO";
+    background: #9c9;
+    color: #efe;
+}
+
+pre {
+    border: 0;
+    box-shadow: none;
+}
+
+pre.example {
+    background: #fec;
+    color: #666;
+    font-size: 0.85em;
+}
+
+pre {
+    background-color: #f8f8f8;
+    background-size: 8px 8px;
+    background-image: linear-gradient(135deg, transparent 25%, rgba(0, 0, 0, 0.02) 25%, rgba(0, 0, 0, 0.02) 50%, transparent 50%, transparent 75%, rgba(0, 0, 0, 0.02) 75%, rgba(0, 0, 0, 0.02));
+}
+
+pre.src {
+    padding: 0.5em;
+    font-size: 90%;
+}
+
+pre.src:before {
+    display: block;
+    position: absolute;
+    background-color: #ccccd0;
+    top: 0;
+    right: 0;
+    padding: 0.25em 0.5em;
+    border-bottom-left-radius: 8px;
+    border: 0;
+    color: white;
+    font-size: 80%;
+}
+
+pre.src-plantuml:before {
+    content: "UML";
+}
+
+pre.src-javascript:before {
+    content: "JS";
+}
+
+pre.src-clojure:before {
+    content: "CLJ";
+}
+
+pre.src-c:before {
+    content: "C";
+}
+
+span.org-string {
+    color: #f94;
+}
+
+span.org-keyword {
+    color: #c07;
+}
+
+span.org-variable-name {
+    color: #f04;
+}
+
+span.org-clojure-keyword {
+    color: #09f;
+}
+
+span.org-comment, span.org-comment-delimiter {
+    color: #999;
+}
+
+span.org-rainbow-delimiters-depth-1, span.org-rainbow-delimiters-depth-5 {
+    color: #666;
+}
+
+span.org-rainbow-delimiters-depth-2, span.org-rainbow-delimiters-depth-6 {
+    color: #888;
+}
+
+span.org-rainbow-delimiters-depth-3, span.org-rainbow-delimiters-depth-7 {
+    color: #aaa;
+}
+
+span.org-rainbow-delimiters-depth-4, span.org-rainbow-delimiters-depth-8 {
+    color: #ccc;
+}
+
+.figure-number {
+    display: none;
+}
+
+div.figure {
+    font-size: 0.85em;
+    text-align: center;
+}
+
+.tag {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: normal;
+    float: right;
+    margin-top: 1em;
+    background: transparent;
+}
+
+.tag span {
+    background: #ccc;
+    padding: 0 0.5em;
+    border-radius: 0.2em;
+    color: white;
+}
+
+.todo, .done {
+    font-family: Helvetica, Arial, sans-serif;
+    font-weight: normal;
+    padding: 0 0.25em;
+    border-radius: 0.2em;
+}
+
+.todo {
+    background: #f04;
+    color: white;
+}
+
+.done {
+    background: #5f7;
+    color: white;
+}
+
+@media screen {
+    h1.title {
+        text-align: left;
+        margin: 1em 0 0 280px;
+    }
+
+    h2 {
+        margin-top: 3em;
+    }
+
+    #table-of-contents {
+        position: fixed;
+        top: 0;
+        left: 0;
+        padding: 2em 0 2em 2em;
+        width: 240px;
+        height: 100vh;
+        font-size: 11px;
+        background: #eee;
+        overflow: auto;
+    }
+
+    #table-of-contents ul>li>ul>li>ul>li {
+        display: none;
+    }
+
+    #table-of-contents h2 {
+        margin-top: 0;
+    }
+
+    #table-of-contents code {
+        font-size: 12px;
+    }
+
+    div.outline-2, #footnotes {
+        margin-left: 280px;
+        max-width: 960px;
+    }
+}
+
+@media screen and (max-width: 1024px) {
+    html, body {
+        font-size: 14px;
+    }
+
+    #table-of-contents {
+        display: none;
+    }
+
+    h1.title {
+        margin-left: 5%;
+    }
+
+    div.outline-2, #footnotes {
+        margin-left: 5%;
+        max-width: 90%;
+    }
+}
+
+@media print {
+
+    body {
+        color: black;
+    }
+
+    @page {
+        margin: 25mm;
+    }
+
+    h2, h3 {
+        page-break-before: always;
+        margin-top: 0;
+    }
+
+    table {
+        page-break-inside: avoid;
+    }
+
+    a:visited {
+        color: black;
+        background: #ff8;
+    }
+
+    a[href^="http"]:visited {
+        background: #bff;
+    }
+
+    div.notice:before {
+        display: none;
+    }
+}
+
+
+.workentry {
+    background: #E5E5E5;
+    padding: 5px 15px 5px 15px;
+    margin: 5px;
+}
+
+.workname {
+    color: green;
+    font-size: 18px;
+}
+
+.worktime {
+    font-size: 12px;
+}
+
+.workposition {
+    color: red;
+    font-size: 16px;
+}
+
+.workdescr {
+    margin-left: 30px;
+}
+
+
+.NOTE {
+    background:  #DFF2BF;
+    border: 1px solid;
+    color: #4F8A10;
+    padding: .2em 1em .2em 2em;
+    border-top-left-radius: 0.2em;
+    border-top-right-radius: 0.2em;
+    border-bottom-right-radius: 0.2em;
+    border-bottom-left-radius: 0.2em;
+    margin: 1em 0;
+}
+
+
+#linker {
+    position: fixed;
+    text-align: center;
+    width: 100%;
+    top: 0;
+    padding: 4px 2px 4px 2px;
+    overflow: auto;
+}
+
+#linker a {
+    border: 1px solid red;
+    font-size: 1.75em
+}
