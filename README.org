@@ -172,11 +172,11 @@ Actually, ~send-command~ has to send a command to the communication channel, whi
 #+NAME: hot-reload-code
 #+BEGIN_SRC lisp
   (defmacro hot-reload-code (name code)
-    `(defparameter ,(intern (concatenate  'string "*" (symbol-name name) "*"))
+    `(defparameter ,(intern (concatenate 'string "*" (symbol-name name) "*"))
                             ,code))
 #+END_SRC
 
-This function is very simple, it puts the result of the executed code in a variable with the appropriate name. The content of this variable can be replaced atomically during the next code reload. For example, this is how you can create a function in a *add* variable that adds up two numbers:
+This function is very simple, it puts the result of the executed code in a variable with the appropriate name. The content of this variable can be replaced atomically during the next code reload. For example, this is how you can create a function in a *sub* variable that subtract up two numbers:
 
 #+BEGIN_SRC lisp
   (hot-reload-code
@@ -280,6 +280,19 @@ The same happens if we remove the SUB variable, the DIV just can't find the func
   => "ERR: The variable *SUB* is unbound."
 #+END_SRC
 
+* Panic
+
+When code is hot-reloaded, something can go wrong, and then continuing to work can have unpredictable consequences.
+
+The program can detect an abnormal situation and to prevent a disaster go into "panic" mode.
+
+When the ~*PANIC*~ flag is not NIL the program should not continue normal operation. Instead it should save what can be saved correctly if possible and proceed to the failure analysis and recovery procedures. For example, it could try to recover to the last working state, or do something else.
+
+#+NAME: panic
+#+BEGIN_SRC lisp
+  (defparameter *panic* nil)
+#+END_SRC
+
 * Logging and debug print
 
 In the simplest way, any errors should cause an error message to be sent to the console for debugging purposes. This is done using the ~DBG~ macro, which accepts the error message and parameters in FORMAT-style.
@@ -290,9 +303,8 @@ A recursive lock differs from an ordinary lock in that a thread that already hol
 
 #+NAME: dbg
 #+BEGIN_SRC lisp
-  (ql:quickload "bordeaux-threads")
-
-  (defparameter *outlock* (bt:make-recursive-lock "output-lock"))
+  (defparameter *outlock*
+    (bt:make-recursive-lock "output-lock"))
 
   (defmacro bprint (var)
     `(subseq (with-output-to-string (*standard-output*)
@@ -367,6 +379,14 @@ Now you can build a minimal working program:
 
 #+NAME: min
 #+BEGIN_SRC lisp :tangle ./src/min.lisp :noweb yes :exports code
+  (ql:quickload "alexandria")
+  (use-package :alexandria)
+  (ql:quickload "cl-ppcre")
+  (use-package :ppcre)
+  (ql:quickload "bordeaux-threads")
+
+  <<panic>>
+
   <<dbg>>
 
   <<with_safe_call>>
@@ -405,24 +425,60 @@ He creates the threads and controls them. Threads do all the dirty work, deal wi
 
 ~PHOENIX~ is very suspicious; it doesn't trust threads that take too long to work. ~PHOENIX~ only likes threads that look like itself - that do their job quickly and die.
 
-To determine how long a thread works, ~PHOENIX~ analyzes how much the thread is "familiar" to him. If in each new life PHOENIX sees an already familiar thread, ~PHOENIX~ understands that he met with this stream in his past lives.
+To determine how long a thread has been in effect, ~PHOENIX~ can analyze how familiar it is to him. If PHOENIX sees a familiar thread in each new life, ~PHOENIX~ understands that it has met that thread in past lives.
 
-This can be expressed in the form of a rule:
+But it is possible to do the same thing in a more optimal way.
+
+We can name threads so that their name contains the value of the watchdog timer when the thread starts. Then we can subtract the actual watchdog value and find out the age of the thread.
+
+** Terminating long-lived threads
+
+This can be expressed as a rule that will kill threads that live too long:
 
 #+NAME: rule_of_killing_threads_by_time
 #+BEGIN_SRC lisp
-  ;; (ql:quickload "alexandria")
+  (defconstant +max-thread-age+ 5)
 
-  (alexandria:named-lambda rule-of-killing-threads-by-time ()
-    (let ((thread-structs (get-all-threads)))
-      (loop for suspicious in thread-structs :do
-        (let ((max-thread-lifetime 3))
-          (if (< max-thread-lifetime
-                 (how-many-times-have-i-seen-you suspicious))
-              (kill-thread suspicious-thread-struct))))))
+  (defparameter *rule-of-killing-threads-by-time*
+    (lambda ()
+      (loop :for thr :in (bt:all-threads) :do
+        (let* ((wdg (with-safe-call
+                        (err (progn
+                               (setf *panic* t)
+                               (dbg "~%ERR: ~A" err)))
+                        :get-thread-wdg-by-name
+                        (bt:thread-name thr)))
+               (age  (- *watchdog-timer* wdg)))
+          (or (> 0 age) ;; overflow *watchdog-timer*
+              (> age +max-thread-age+)
+              (unless *panic*
+                (bt:destroy-thread thread)))))))
+
+  (defparameter *get-thread-wdg-by-name*
+    (lambda (thread-name)
+      "returns wdg value from thread-name or nil"
+      (multiple-value-bind (match regs)
+          (scan-to-strings "\.*\\s+wdg=([0-9]*)"
+                           thread-name)
+        (when match
+          (parse-integer (aref regs 0))))))
 #+END_SRC
 
-It should be noted that some types of threads can live longer than others.
+Suppose we name threads as "thread-type-name wdg=123", where "123" is the value of ~*WATCHDOG-TIMER*~ at the moment when this thread was created. Then the ~get-thread-wdg-by-name~ helper function, when safely called, will return "12345" to us.
+
+If the current value of ~*WATCHDOG-TIMER*~ reaches "129", it means that the thread has been alive for 6 epochs (i.e. PHOENIX has restarted 6 times). If ~MAIN-LOOP~ falls asleep for 3 seconds after a PHOENIX restart, it means that the thread is already alive for more than 6*3=18 seconds, which is clearly more it should be.
+
+So the ~RULE-OF-KILLING-THREADS-BY-TIME~ procedure should kill this thread if it sees that it lives more than ~+max-thread-age+~ epochs. [TODO:gmm] - What happens if the thread being killed is holds a lock?
+
+It is also possible that ~*WATCHDOG-TIMER*~ is less than the value returned by ~get-thread-wdg-by-name~. It is possible when ~*WATCHDOG-TIMER*~ overflows and we kill all such threads without waiting until ~*WATCHDOG-TIMER*~ becomes big enough to keep a thread alive longer than expected.
+
+The same mechanism (resetting ~*WATCHDOG-TIMER*~) can be used to restart all the threads.
+
+[TODO:gmm] - We can also provide a negative value of ~*WATCHDOG-TIMER*~ to use it for something else, like recovering from a panic.
+
+We will go into a panic state if, for example, when trying to call the get-thread-wdg-by-name procedure safely, it is found that this variable does not exist.
+
+** Terminating lazy threads
 
 The second thing suspicious to ~PHOENIX~ is when the thread under investigation does not do its job. There may be one or more incoming queues associated with each thread. If there are too many messages piled up in the inbox, this is a reason to kill:
 
