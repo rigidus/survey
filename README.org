@@ -197,13 +197,13 @@ Here we can use the ~safe-call~ macro helper, which provides error handling if t
 
 #+NAME: with_safe_call
 #+BEGIN_SRC lisp
-  (defmacro with-safe-call ((safe-call-err-var &body error-handler)
-                            name &rest params)
+  (defmacro with-safe-call ((err-var &body err-handler)
+                            func-var &rest params)
     `(handler-case
          (funcall
-          ,(intern (concatenate  'string "*" (symbol-name name) "*"))
+          ,(intern (concatenate  'string "*" (symbol-name func-var) "*"))
           ,@params)
-       (t (,safe-call-err-var) ,@error-handler)))
+       (t (,err-var) ,@err-handler)))
 #+END_SRC
 
 This macro helper turns a function call into an exception handler and illustrates the idea of "defensive programming":
@@ -439,20 +439,25 @@ This can be expressed as a rule that will kill threads that live too long:
 #+BEGIN_SRC lisp
   (defconstant +max-thread-age+ 5)
 
+  (defmacro with-panic-safe-call (name &rest params)
+    `(with-safe-call
+         (err (progn
+                (setf *panic* t)
+                (dbg "~%ERR: ~A" err)))
+         ,name
+         ,@params))
+
   (defparameter *rule-of-killing-threads-by-time*
     (lambda ()
       (loop :for thr :in (bt:all-threads) :do
-        (let* ((wdg (with-safe-call
-                        (err (progn
-                               (setf *panic* t)
-                               (dbg "~%ERR: ~A" err)))
-                        :get-thread-wdg-by-name
-                        (bt:thread-name thr)))
-               (age  (- *watchdog-timer* wdg)))
-          (or (> 0 age) ;; overflow *watchdog-timer*
-              (> age +max-thread-age+)
-              (unless *panic*
-                (bt:destroy-thread thread)))))))
+        (let* ((wdg (with-panic-safe-call :get-thread-wdg-by-name
+                      (bt:thread-name thr))))
+          (unless (equal nil wdg)
+            (let ((age  (- *watchdog-timer* wdg)))
+              (or (> 0 age) ;; overflow *watchdog-timer*
+                  (> age +max-thread-age+)
+                  (unless *panic*
+                    (bt:destroy-thread thr)))))))))
 
   (defparameter *get-thread-wdg-by-name*
     (lambda (thread-name)
@@ -478,7 +483,60 @@ The same mechanism (resetting ~*WATCHDOG-TIMER*~) can be used to restart all the
 
 We will go into a panic state if, for example, when trying to call the get-thread-wdg-by-name procedure safely, it is found that this variable does not exist.
 
-** Terminating lazy threads
+** Creating new threads
+
+Now we have to make up for the lost threads somehow. To do this we will write a rule that will create missing threads if their number is less than ~+min-thread-pool-size+~
+
+#+NAME: rule_of_killing_threads_by_time
+#+BEGIN_SRC lisp
+  (defconstant +min-thread-pool-size+ 4)
+
+  (defparameter *working-thread-stop-flag* nil)
+
+  (defparameter *rule-of-creating-new-threads*
+    (lambda ()
+      (let ((working-threads-cnt 0))
+        (loop :for thr :in (bt:all-threads) :do
+          (let* ((wdg (with-panic-safe-call :get-thread-wdg-by-name
+                        (bt:thread-name thr))))
+            (unless (equal nil wdg)
+              (incf working-threads-cnt))))
+        (when (> +MIN-THREAD-POOL-SIZE+ working-threads-cnt)
+          (dotimes (idx (- +MIN-THREAD-POOL-SIZE+ working-threads-cnt))
+            (bt:make-thread
+             ,*WORKING-THREAD-FUNC*
+             :name (format nil "++(~A)working-thread wdg=~D" idx *WATCHDOG-TIMER*)
+             :initial-bindings
+             `((*standard-output* . ,*standard-output*)
+               (*panic* . ,*panic*)
+               (*working-thread-stop-flag* . ,*working-thread-stop-flag*))))))))
+
+  (defparameter *working-thread-func*
+    (lambda ()
+      (sleep 15)))
+
+  ;; (funcall *rule-of-creating-new-threads*)
+
+  ;; (bt:all-threads)
+
+  ;; =>
+  ;; #<SB-THREAD:THREAD "main thread" RUNNING {1001838103}>
+  ;; #<SB-THREAD:THREAD "Swank Sentinel" RUNNING {10019B0AF3}>
+  ;; #<SB-THREAD:THREAD "control-thread" RUNNING {1001BEE4E3}>
+  ;; #<SB-THREAD:THREAD "swank-indentation-cache-thread" RUNNING {1001BEEC03}>
+  ;; #<SB-THREAD:THREAD "reader-thread" RUNNING {1004E62FE3}>
+  ;; #<SB-THREAD:THREAD "++(1)working-thread wdg=0" RUNNING {1003631073}>
+  ;; #<SB-THREAD:THREAD "++(2)working-thread wdg=0" RUNNING {1003631383}>
+  ;; #<SB-THREAD:THREAD "repl-thread" RUNNING {1002BB9DC3}>
+  ;; #<SB-THREAD:THREAD "worker" RUNNING {10036402F3}>
+  ;; #<SB-THREAD:THREAD "++(3)working-thread wdg=0" RUNNING {1003631693}>
+  ;; #<SB-THREAD:THREAD "++(0)working-thread wdg=0" RUNNING {1003630C03}>
+  ;; #<SB-THREAD:THREAD "auto-flush-thread" RUNNING {1004E62F53}>
+
+#+END_SRC
+
+
+** TODO Terminating lazy threads
 
 The second thing suspicious to ~PHOENIX~ is when the thread under investigation does not do its job. There may be one or more incoming queues associated with each thread. If there are too many messages piled up in the inbox, this is a reason to kill:
 
