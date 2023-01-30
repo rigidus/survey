@@ -222,7 +222,7 @@ Now if we call the *DIV* function via SAFE-CALL, we will get an error handled, b
 
 #+BEGIN_SRC lisp
   (with-safe-call (err (format nil "SAFE-CALL-ERROR: ~A" err))
-                  :div 12 3)
+                  :DIV 12 3)
 
   => "SAFE-CALL-ERROR: The variable *DIV* is unbound."
 #+END_SRC
@@ -231,7 +231,7 @@ Now if you define *DIV*, the call will return the correct result:
 
 #+BEGIN_SRC lisp
   (hot-reload-code
-   :div
+   :DIV
    (lambda (param-a param-b)
      (block div-ret-block
        (when (= 0 param-b)
@@ -241,14 +241,14 @@ Now if you define *DIV*, the call will return the correct result:
                do (setf param-a
                         (with-safe-call
                             (err (format nil "ERR: ~A" err))
-                            :sub param-a param-b)
+                            :SUB param-a param-b)
                         cnt (+ 1 cnt))
                   (unless (numberp param-a)
                     (return-from div-ret-block param-a)))
          cnt))))
 
   (with-safe-call (err (format nil "ERR: ~A" err))
-                  :div 12 3)
+                  :DIV 12 3)
   => 4 (3 bits, #x4, #o4, #b100)
 #+END_SRC
 
@@ -264,7 +264,7 @@ For example, if we try to divide by zero, we will get a division by zero error h
 
 #+BEGIN_SRC lisp
   (with-safe-call (err (format nil "ERR: ~A" err))
-                  :div 1 0)
+                  :DIV 1 0)
   => "ERR: arithmetic error DIVISION-BY-ZERO signalled"
 #+END_SRC
 
@@ -276,7 +276,7 @@ The same happens if we remove the SUB variable, the DIV just can't find the func
   (makunbound '*sub*)
 
   (with-safe-call (err (format nil "ERR: ~A" err))
-                  :div 1 1)
+                  :DIV 1 1)
   => "ERR: The variable *SUB* is unbound."
 #+END_SRC
 
@@ -290,7 +290,7 @@ When the ~*PANIC*~ flag is not NIL the program should not continue normal operat
 
 #+NAME: panic
 #+BEGIN_SRC lisp
-  (defparameter *panic* nil)
+  (defparameter *PANIC* nil)
 #+END_SRC
 
 * Logging and debug print
@@ -303,7 +303,7 @@ A recursive lock differs from an ordinary lock in that a thread that already hol
 
 #+NAME: dbg
 #+BEGIN_SRC lisp
-  (defparameter *outlock*
+  (defparameter *OUTLOCK*
     (bt:make-recursive-lock "output-lock"))
 
   (defmacro bprint (var)
@@ -312,14 +312,14 @@ A recursive lock differs from an ordinary lock in that a thread that already hol
 
   (defmacro dbg (msg &rest params)
     "debug output with lock"
-    `(bt:with-recursive-lock-held (*outlock*)
+    `(bt:with-recursive-lock-held (*OUTLOCK*)
        (format t ,msg ,@params)
        (finish-output)))
 #+END_SRC
 
 * Main loop
 
-When the Client or the Server starts up, it enters a (conditionally) infinite loop in which the PHOENIX, which we'll talk about in the next section, is started every *SLEEP-INTERVAL* seconds. It is started through the ~WITH-SAFE-CALL~ mechanism we just talked about.
+When the Client or the Server starts up, it enters a (conditionally) infinite loop in which the PHOENIX, which we'll talk about in the next section, is started every *SLEEP-INTERVAL* seconds. It is started through the ~with-safe-call~ mechanism we just talked about.
 
 To atomically break this infinite loop, the variable *MAIN-LOOP-STOP* is used, which must be equal to NIL as long as the loop has to run.
 
@@ -327,30 +327,28 @@ If it is not NIL, its contents will be executed through ~WITH-SAFE-CALL~ and thi
 
 #+NAME: main_loop
 #+BEGIN_SRC lisp
-  (defparameter *watchdog-timer* 0)
-  (defparameter *main-loop-stop* nil)
-  (defparameter *sleep-interval* 3)
+  (defparameter *WATCHDOG-TIMER* 0)
+  (defparameter *MAIN-LOOP-STOP* nil)
+  (defparameter *SLEEP-INTERVAL* 3)
 
   (defun main-loop ()
-    (setf *watchdog-timer* 0)
+    (setf *WATCHDOG-TIMER* 0)
     (tagbody
      infinite
-       (when *main-loop-stop*
+       (when *MAIN-LOOP-STOP*
          (with-safe-call
              (err
                (dbg "~%ERR: ~A Trying to stop the main loop." err))
-             :main-loop-stop)
+             :MAIN-LOOP-STOP)
          (go end))
-       (dbg "~%::main-loop WDG=~3,'0D" *watchdog-timer*)
+       (dbg "~%::main-loop WDG=~3,'0D" *WATCHDOG-TIMER*)
        (with-safe-call (err (dbg "~%ERR: ~A" err))
-                       :phoenix 1 0)
-       (sleep *sleep-interval*)
-       (incf *watchdog-timer*)
+                       :PHOENIX)
+       (sleep *SLEEP-INTERVAL*)
+       (incf *WATCHDOG-TIMER*)
        (go infinite)
      end
-       (dbg "~%::the main-loop is correctly terminated")))
-
-  (main-loop)
+       (dbg "~%::the MAIN-LOOP is correctly terminated")))
 #+END_SRC
 
 Activity Diagram:
@@ -394,6 +392,8 @@ Now you can build a minimal working program:
   <<main_loop>>
 #+END_SRC
 
+If you run ~main-loop~ this minimal program will start.
+
 Every 3 seconds it will try to safely run *PHOENIX*, which doesn't exist yet, get an error here and start again until we get tired of it and change the value of the *MAIN-LOOP-STOP* variable to T for example.
 
 Then the program will try to execute *MAIN-LOOP-STOP*, get an error and exit correctly.
@@ -421,11 +421,11 @@ This means that ~PHOENIX~ must complete its tasks and die quickly. After a sleep
 
 What tasks does the ~PHOENIX~ perform?
 
-He creates the threads and controls them. Threads do all the dirty work, deal with unstable network connections, and are prone to hang-ups. If PHOENIX has reason to suspect that a thread is hanging, ~PHOENIX~ should kill the thread.
+He creates the threads and controls them. Threads do all the dirty work, deal with unstable network connections, and are prone to hang-ups. If ~PHOENIX~ has reason to suspect that a thread is hanging, ~PHOENIX~ should kill the thread.
 
-~PHOENIX~ is very suspicious; it doesn't trust threads that take too long to work. ~PHOENIX~ only likes threads that look like itself - that do their job quickly and die.
+~PHOENIX~ is very suspicious; he doesn't trust threads that run too long. ~PHOENIX~ only likes threads that behave like ~PHOENIX~ himself - doing their job quickly and dying.
 
-To determine how long a thread has been in effect, ~PHOENIX~ can analyze how familiar it is to him. If PHOENIX sees a familiar thread in each new life, ~PHOENIX~ understands that it has met that thread in past lives.
+To determine how long a thread lives, ~PHOENIX~ can analyze how familiar it is to him. If ~PHOENIX~ sees a familiar thread in each new life, ~PHOENIX~ understands that it has met that thread in past lives.
 
 But it is possible to do the same thing in a more optimal way.
 
@@ -437,29 +437,15 @@ This can be expressed as a rule that will kill threads that live too long:
 
 #+NAME: rule_of_killing_threads_by_time
 #+BEGIN_SRC lisp
-  (defconstant +max-thread-age+ 5)
-
   (defmacro with-panic-safe-call (name &rest params)
     `(with-safe-call
          (err (progn
-                (setf *panic* t)
+                (setf *PANIC* t)
                 (dbg "~%ERR: ~A" err)))
          ,name
          ,@params))
 
-  (defparameter *rule-of-killing-threads-by-time*
-    (lambda ()
-      (loop :for thr :in (bt:all-threads) :do
-        (let* ((wdg (with-panic-safe-call :get-thread-wdg-by-name
-                      (bt:thread-name thr))))
-          (unless (equal nil wdg)
-            (let ((age  (- *watchdog-timer* wdg)))
-              (or (> 0 age) ;; overflow *watchdog-timer*
-                  (> age +max-thread-age+)
-                  (unless *panic*
-                    (bt:destroy-thread thr)))))))))
-
-  (defparameter *get-thread-wdg-by-name*
+  (defparameter *GET-THREAD-WDG-BY-NAME*
     (lambda (thread-name)
       "returns wdg value from thread-name or nil"
       (multiple-value-bind (match regs)
@@ -467,53 +453,82 @@ This can be expressed as a rule that will kill threads that live too long:
                            thread-name)
         (when match
           (parse-integer (aref regs 0))))))
+
+  (defconstant +max-thread-age+ 5)
+
+  (defparameter *rule-of-killing-threads-by-time*
+    (lambda ()
+      (loop :for thr :in (bt:all-threads) :do
+        (let* ((wdg (with-panic-safe-call :GET-THREAD-WDG-BY-NAME
+                      (bt:thread-name thr))))
+          (unless (equal nil wdg)
+            (let ((age  (- *WATCHDOG-TIMER* wdg)))
+              (or (> 0 age) ;; overflow *watchdog-timer*
+                  (> age +MAX-THREAD-AGE+)
+                  (unless *PANIC*
+                    (bt:destroy-thread thr)))))))))
 #+END_SRC
 
-Suppose we name threads as "thread-type-name wdg=123", where "123" is the value of ~*WATCHDOG-TIMER*~ at the moment when this thread was created. Then the ~get-thread-wdg-by-name~ helper function, when safely called, will return "12345" to us.
+Suppose we name threads as "thread-type-name wdg=123", where "123" is the value of ~*WATCHDOG-TIMER*~ at the moment when this thread was created. Then the ~GET-THREAD-WDG-BY-NAME~ helper function, when safely called, will return "12345" to us.
 
 If the current value of ~*WATCHDOG-TIMER*~ reaches "129", it means that the thread has been alive for 6 epochs (i.e. PHOENIX has restarted 6 times). If ~MAIN-LOOP~ falls asleep for 3 seconds after a PHOENIX restart, it means that the thread is already alive for more than 6*3=18 seconds, which is clearly more it should be.
 
-So the ~RULE-OF-KILLING-THREADS-BY-TIME~ procedure should kill this thread if it sees that it lives more than ~+max-thread-age+~ epochs. [TODO:gmm] - What happens if the thread being killed is holds a lock?
+So the ~RULE-OF-KILLING-THREADS-BY-TIME~ procedure should kill this thread if it sees that it lives more than ~+MAX-THREAD-AGE+~ epochs. [TODO:gmm] - What happens if the thread being killed is holds a lock?
 
-It is also possible that ~*WATCHDOG-TIMER*~ is less than the value returned by ~get-thread-wdg-by-name~. It is possible when ~*WATCHDOG-TIMER*~ overflows and we kill all such threads without waiting until ~*WATCHDOG-TIMER*~ becomes big enough to keep a thread alive longer than expected.
+It is also possible that ~*WATCHDOG-TIMER*~ is less than the value returned by ~GET-THREAD-WDG-BY-NAME~. It is possible when ~*WATCHDOG-TIMER*~ overflows and we kill all such threads without waiting until ~*WATCHDOG-TIMER*~ becomes big enough to keep a thread alive longer than expected.
 
 The same mechanism (resetting ~*WATCHDOG-TIMER*~) can be used to restart all the threads.
 
 [TODO:gmm] - We can also provide a negative value of ~*WATCHDOG-TIMER*~ to use it for something else, like recovering from a panic.
 
-We will go into a panic state if, for example, when trying to call the get-thread-wdg-by-name procedure safely, it is found that this variable does not exist.
+We will go into a panic state if, for example, when trying to call the ~GET-THREAD-WDG-BY-NAME~ procedure safely, it is found that this variable does not exist.
 
 ** Creating new threads
 
-Now we have to make up for the lost threads somehow. To do this we will write a rule that will create missing threads if their number is less than ~+min-thread-pool-size+~
+Now we have to make up for the lost threads somehow. To do this we will write a rule that will create missing threads if their number is less than ~+MIN-THREAD-POOL-SIZE+~
 
-#+NAME: rule_of_killing_threads_by_time
+#+NAME: rule_of_creating_new_threads
 #+BEGIN_SRC lisp
-  (defconstant +min-thread-pool-size+ 4)
+  (defparameter *WORKING-THREAD-STOP-FLAG* nil)
 
-  (defparameter *working-thread-stop-flag* nil)
+  (defparameter *WORKING-THREAD-FUNC*
+    (lambda ()
+      (let ((work-cnt 0)
+            (work-cnt-max (random 40)))
+        (tagbody
+         work-repeat
+           (when *WORKING-THREAD-STOP-FLAG*
+             (go work-exit))
+           (when (> work-cnt work-cnt-max)
+             (go work-exit))
+           (sleep 1)
+           (go work-repeat)
+         work-exit))))
 
-  (defparameter *rule-of-creating-new-threads*
+  (defconstant +MIN-THREAD-POOL-SIZE+ 3)
+
+  (defparameter *RULE-OF-CREATING-NEW-THREADS*
     (lambda ()
       (let ((working-threads-cnt 0))
         (loop :for thr :in (bt:all-threads) :do
-          (let* ((wdg (with-panic-safe-call :get-thread-wdg-by-name
+          (let* ((wdg (with-panic-safe-call
+                        :get-thread-wdg-by-name
                         (bt:thread-name thr))))
             (unless (equal nil wdg)
               (incf working-threads-cnt))))
         (when (> +MIN-THREAD-POOL-SIZE+ working-threads-cnt)
-          (dotimes (idx (- +MIN-THREAD-POOL-SIZE+ working-threads-cnt))
+          (dotimes (idx (- +MIN-THREAD-POOL-SIZE+
+                           working-threads-cnt))
             (bt:make-thread
-             ,*WORKING-THREAD-FUNC*
-             :name (format nil "++(~A)working-thread wdg=~D" idx *WATCHDOG-TIMER*)
+             #'(lambda ()
+                 (with-panic-safe-call
+                   :WORKING-THREAD-FUNC))
+             :name (format nil "++(~A)working-thread wdg=~D"
+                           idx *WATCHDOG-TIMER*)
              :initial-bindings
              `((*standard-output* . ,*standard-output*)
-               (*panic* . ,*panic*)
+               (*PANIC* . ,*PANIC*)
                (*working-thread-stop-flag* . ,*working-thread-stop-flag*))))))))
-
-  (defparameter *working-thread-func*
-    (lambda ()
-      (sleep 15)))
 
   ;; (funcall *rule-of-creating-new-threads*)
 
@@ -535,8 +550,128 @@ Now we have to make up for the lost threads somehow. To do this we will write a 
 
 #+END_SRC
 
+** Rule-processor
 
-** TODO Terminating lazy threads
+Now that we have at least two rules for creating and deleting threads, we can build a list of rules.
+
+This is very important, because the contents of the list of rules (and the order of the rules in the list) will determine the logic of the whole program.
+
+#+NAME: rulez
+#+BEGIN_SRC lisp
+  (defclass rulez ()
+    ((lst :initarg :lst)))
+
+  (defparameter *LIST-OF-RULES*
+    (make-instance 'rulez
+                   :lst `(*rule-of-killing-threads-by-time*
+                          ,*rule-of-creating-new-threads*)))
+
+  (defmethod run ((rlz rulez))
+    (loop for rule in (slot-value *list-of-rules* 'lst) :do
+      (funcall (symbol-value rule))))
+#+END_SRC
+
+** Minimal Phoenix program
+
+Now if we add phoenix to the minimal program obtained in the previous step, we get a thread supervisor that creates and removes threads as they exceed the maximum running time
+
+#+BEGIN_SRC plantuml :file ./img/main_loop_and_phoenix_activity.png
+  |MAIN_LOOP|
+    start
+    :clear WATCHDOG_TIMER value;
+    while (MAIN_LOOP_STOP is clear?) is (Yes)
+       :debug print WATCHDOG_TIMER value;
+       :try to call PHOENIX;
+
+       if (PHOENIX is exists?) is (exists) then
+  |#AntiqueWhite|PHOENIX|
+       :rule of killing threads by time;
+       :rule of creating new threads;
+  |MAIN_LOOP|
+       else (not exists)
+       endif
+
+       :increment WATCHDOG_TIMER value;
+    endwhile
+    :try to call MAIN_LOOP_STOP;
+    :debug print exit message;
+    stop
+#+END_SRC
+
+#+results:
+[[file:./img/main_loop_and_phoenix_activity.png]]
+
+[[file:./img/main_loop_and_phoenix_activity.png]]
+
+
+#+NAME: min_phoenix
+#+BEGIN_SRC lisp :tangle ./src/min_phoenix.lisp :noweb yes :exports code
+  <<min>>
+
+  <<rule_of_killing_threads_by_time>>
+
+  <<rule_of_creating_new_threads>>
+
+  <<rulez>>
+
+  (defparameter *phoenix*
+    (lambda ()
+      (run *list-of-rules*)))
+
+  ;; (main-loop)
+
+  ;; (bt:all-threads)
+#+END_SRC
+
+* Queues and locks
+
+Now that Phoenix controls the threads, it's impossible to predict when a thread will be killed because it takes too long to fiddle with its bit of work.
+
+To manage this we can have three queues: ~TODO~, ~IN-PROGRESS~, and ~DONE~ to keep track of the state of the work.
+
+Since threads compete for jobs, we need to access these queues exclusively, with critical sections protected by mutexes - one mutex per queue
+
+#+NAME: queue
+#+BEGIN_SRC lisp
+  (defclass queue ()
+    ((lst   :initform  nil)
+     (lock  :initarg   :lock)))
+
+  (defmethod enque ((que queue) task)
+    (bt:with-recursive-lock-held ((slot-value que 'lock))
+      (setf (slot-value que 'lst)
+            (append (slot-value que 'lst)
+                    (list task)))))
+
+  (defmethod deque ((que queue))
+    (bt:with-recursive-lock-held ((slot-value que 'lock))
+      (pop (slot-value que 'lst))))
+
+
+  (defparameter *TODO*
+    (make-instance
+     'queue
+     :lock (bt:make-recursive-lock "todo-lock")))
+
+  (defparameter *IN-PROGRESS*
+    (make-instance
+     'queue
+     :lock (bt:make-recursive-lock "in-progress-lock")))
+
+  (defparameter *DONE*
+    (make-instance
+     'queue
+     :lock (bt:make-recursive-lock "done-lock")))
+
+
+  ;; (slot-value *TODO* 'lst)
+
+  ;; (enque *TODO* 3)
+
+  ;; (deque *TODO*)
+#+END_SRC
+
+* TODO Terminating lazy threads
 
 The second thing suspicious to ~PHOENIX~ is when the thread under investigation does not do its job. There may be one or more incoming queues associated with each thread. If there are too many messages piled up in the inbox, this is a reason to kill:
 
@@ -603,34 +738,6 @@ To avoid race conditions, it is necessary to use thread-operations-lock
 The rest of the logic of the work will be encapsulated in the correct order of rules. We will consider it in the next sections, but for now we will limit ourselves to the diagram:
 
 
-#+BEGIN_SRC plantuml :file ./img/main_loop_and_phoenix_activity.png
-  |MAIN_LOOP|
-    start
-    :clear WATCHDOG_TIMER value;
-    while (MAIN_LOOP_STOP is clear?) is (Yes)
-       :debug print WATCHDOG_TIMER value;
-       :try to call PHOENIX;
-
-       if (PHOENIX is exists?) is (exists) then
-  |#AntiqueWhite|PHOENIX|
-       :rule of killing threads by time;
-       :rule of killing threads by queue overflow;
-       :rule of born irc conn threads;
-  |MAIN_LOOP|
-       else (not exists)
-       endif
-
-       :increment WATCHDOG_TIMER value;
-    endwhile
-    :try to call MAIN_LOOP_STOP;
-    :debug print exit message;
-    stop
-#+END_SRC
-
-#+results:
-[[file:./img/main_loop_and_phoenix_activity.png]]
-
-[[file:./img/main_loop_and_phoenix_activity.png]]
 
 
 [TODO:gmm] -=HERE=- ----------------------------------------
