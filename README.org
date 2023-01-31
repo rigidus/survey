@@ -941,26 +941,26 @@ How to make screenshot:
 
 
   (defun list-of-promises-future-demo (n)
-    (let* ((promises (make-list n :initial-element nil))
+    (let* ((futures (make-list n))
            (stream *query-io*))
       (dotimes (i n)
         (let* ((number (progn
                          (princ (format stream "~%Enter a number (~d): " i))
                          (read)))
-               (promise (promise)))
-          (future
-            (sleep (random 10))
-            (fulfill promise (* number number))
-            (force (future
-                     (sleep 1)
-                     (format stream "~%Square of ~d = ~d"
-                             number
-                             (force promise)))))
-          (setf (nth i promises) promise)))
+               (promise (promise))
+               (future  (future
+                          (sleep (random 10))
+                          (fulfill promise (* number number))
+                          (force (future
+                                   (sleep 1)
+                                   (format stream "~%Square of ~d = ~d"
+                                           number
+                                           (force promise)))))))
+          (setf (nth i futures)  future)))
       (loop
         do (sleep 1)
-        until (loop for p in promises always (fulfilledp p))
-        finally (progn (sleep 2) (return)))))
+        until (loop for f in futures always (fulfilledp f))
+        finally (return))))
 
   (list-of-promises-future-demo 3)
 
