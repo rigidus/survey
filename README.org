@@ -435,6 +435,8 @@ We can name threads so that their name contains the value of the watchdog timer 
 
 This can be expressed as a rule that will kill threads that live too long:
 
+[TODO:gmm] - https://github.com/LispCookbook/cl-cookbook/issues/386
+
 #+NAME: rule_of_killing_threads_by_time
 #+BEGIN_SRC lisp
   (defmacro with-panic-safe-call (name &rest params)
@@ -669,6 +671,364 @@ Since threads compete for jobs, we need to access these queues exclusively, with
   ;; (enque *TODO* 3)
 
   ;; (deque *TODO*)
+#+END_SRC
+
+* Tasks
+
+[TODO:gmm] - Use LPARALEL https://lispcookbook.github.io/cl-cookbook/process.html#joining-on-a-thread-destroying-a-thread
+
+Now we need to form tasks, which we will pass in the chain. Each task will capture the data it works with.
+
+#+NAME: task
+#+BEGIN_SRC lisp
+  (defclass task ()
+    ((initial :accessor initial)))
+#+END_SRC
+
+* Screenshot
+
+How to make screenshot:
+
+#+NAME: x_snapshot
+#+BEGIN_SRC lisp :padline no
+  (ql:quickload "clx")
+  (ql:quickload "zpng")
+
+  (defmacro with-display (host (display screen root-window) &body body)
+    `(let* ((,display (xlib:open-display ,host))
+            (,screen (first (xlib:display-roots ,display)))
+            (,root-window (xlib:screen-root ,screen)))
+       (unwind-protect (progn ,@body)
+         (xlib:close-display ,display))))
+
+  (defmacro with-default-display ((display &key (force nil)) &body body)
+    `(let ((,display (xlib:open-default-display)))
+       (unwind-protect
+            (unwind-protect
+                 ,@body
+              (when ,force
+                (xlib:display-force-output ,display)))
+         (xlib:close-display ,display))))
+
+  (defmacro with-default-display-force ((display) &body body)
+    `(with-default-display (,display :force t) ,@body))
+
+  (defmacro with-default-screen ((screen) &body body)
+    (let ((display (gensym)))
+      `(with-default-display (,display)
+         (let ((,screen (xlib:display-default-screen ,display)))
+           ,@body))))
+
+  (defmacro with-default-window ((window) &body body)
+    (let ((screen (gensym)))
+      `(with-default-screen (,screen)
+         (let ((,window (xlib:screen-root ,screen)))
+           ,@body))))
+
+  (defun x-size ()
+    (with-default-screen (s)
+      (values
+       (xlib:screen-width s)
+       (xlib:screen-height s))))
+
+  (defparameter *default-x* 0)
+  (defparameter *default-y* 0)
+  (defparameter *default-width* 800)
+  (defparameter *default-height* 600)
+
+  (defun init-defaults ()
+    (multiple-value-bind (width height)
+        (x-size)
+      (setf *default-width* width
+            ,*default-height* height
+            ,*default-x* 0
+            ,*default-y* 0)))
+
+  (init-defaults)
+
+  (defun raw-image->png (data width height)
+    (let* ((png (make-instance 'zpng:png :width width :height height
+                               :color-type :truecolor-alpha
+                               :image-data data))
+           (data (zpng:data-array png)))
+      (dotimes (y height)
+        (dotimes (x width)
+          ;; BGR -> RGB, ref code: https://goo.gl/slubfW
+          ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
+          (rotatef (aref data y x 0) (aref data y x 2))
+          (setf (aref data y x 3) 255)))
+      png))
+
+  (defun x-snapshot (&key (x *default-x*) (y *default-y*)
+                       (width  *default-width*) (height *default-height*)
+                       path)
+    ;; "Return RGB data array (The dimensions correspond to the height, width,
+    ;; and pixel components, see comments in x-snapsearch for more details),
+    ;; or write to file (PNG only), depend on if you provide the path keyword"
+    (with-default-window (w)
+      (let ((image
+             (raw-image->png
+              (xlib:get-raw-image w :x x :y y
+                                  :width width :height height
+                                  :format :z-pixmap)
+              width height)
+            ))
+        (if path
+            (let* ((ext (pathname-type path))
+                   (path
+                    (if ext
+                        path
+                        (concatenate 'string path ".png")))
+                   (png? (or (null ext) (equal ext "png"))))
+              (cond
+                (png? (zpng:write-png image path))
+                (t (error "Only PNG file is supported"))))
+            (zpng:data-array image)))))
+
+  ;; (x-snapshot :path "x-snapshot-true-color.png")
+#+END_SRC
+
+
+* Lparallel
+
+#+BEGIN_SRC lisp
+  (ql:quickload "lparallel")
+  (ql:quickload "serapeum")
+
+
+  (defun show-kernel-info ()
+    (let ((name (lparallel:kernel-name))
+          (count (lparallel:kernel-worker-count))
+          (context (lparallel:kernel-context))
+          (bindings (lparallel:kernel-bindings)))
+      (format t "Kernel name = ~a~%" name)
+      (format t "Worker threads count = ~d~%" count)
+      (format t "Kernel context = ~a~%" context)
+      (format t "Kernel bindings = ~a~%" bindings)))
+
+  (show-kernel-info)
+
+  (lparallel:end-kernel :wait t)
+
+
+  (ql:quickload "bt-semaphore")
+
+  (use-package :lparallel)
+  (use-package :lparallel.queue)
+  (use-package :bt-semaphore)
+
+  (defun init ()
+    (setf lparallel:*kernel*
+          (lparallel:make-kernel (serapeum:count-cpus)
+                                 :name "channel-queue-kernel")))
+
+  (init)
+
+  (defun shutdown ()
+    (end-kernel :wait t))
+
+  (shutdown)
+
+  (defun calculate-square (n)
+    (let* ((channel (lparallel:make-channel))
+           (res nil))
+      (lparallel:submit-task channel
+                             (lambda (x)
+                               (* x x))
+                             n)
+      (setf res (lparallel:receive-result channel))
+      (format t "Square of ~d = ~d~%" n res)))
+
+  ;; (calculate-square 25)
+
+  (defun test-basic-channel-multiple-tasks ()
+    (let ((channel (make-channel))
+          (res '()))
+      (submit-task channel (lambda (x)
+                             (* x x))
+                   10)
+      (submit-task channel (lambda (y)
+                             (* y y y))
+                   10)
+      (submit-task channel (lambda (z)
+                             (* z z z z))
+                   10)
+      (dotimes (i 3 res)
+        (push (receive-result channel) res))))
+
+
+  (test-basic-channel-multiple-tasks)
+
+  (defun test-promise ()
+    (let ((p (promise)))
+      (loop
+        do (if (evenp (read))
+               (progn
+                 (fulfill p 'even-received!)
+                 (return))))
+      (force p)))
+
+  (test-promise)
+
+  (defun promise-with-threads ()
+    (let ((p (promise))
+          (stream *query-io*)
+          (n (progn
+               (princ "Enter a number: ")
+               (read))))
+      (format t "In main function...~A~%" p)
+      (bt:make-thread
+       (lambda ()
+         (sleep (random 10))
+         (format stream "Inside thread... fulfilling promise ~A~%" p)
+         (fulfill p (* n n))))
+      (bt:make-thread
+       (lambda ()
+         (loop
+           when (fulfilledp p)
+             do (return)
+           do (progn
+                (format stream "~d~%" (random 100))
+                (sleep (* 0.01 (random 100)))))))
+      (format t "Inside main function, received value: ~d~%" (force p))))
+
+  (promise-with-threads)
+
+  (defun test-future ()
+    (let ((f (future
+               (sleep (random 5))
+               (print "Hello from future!"))))
+      (loop
+        when (fulfilledp f)
+          do (return)
+        do (sleep (* 0.01 (random 100)))
+           (format t "~d~%" (random 100)))
+      (format t "~d~%" (force f))))
+
+  (test-future)
+
+
+  (ql:quickload "lparallel")
+  (ql:quickload "serapeum")
+  (ql:quickload "bt-semaphore")
+  (use-package :lparallel)
+  (use-package :lparallel.queue)
+  (use-package :bt-semaphore)
+  (defun init ()
+    (setf lparallel:*kernel*
+          (lparallel:make-kernel (serapeum:count-cpus)
+                                 :name "channel-queue-kernel")))
+  (init)
+
+
+  (defun callback-promise-future-demo ()
+    (let* ((p (promise))
+           (stream *query-io*)
+           (n (progn
+                (princ "Enter a number: ")
+                (read)))
+           (f (future
+                (sleep (random 10))
+                (fulfill p (* n n))
+                (force (future
+                         (format stream "Square of ~d = ~d~%" n (force p)))))))
+      (loop
+        when (fulfilledp f)
+          do (return (force p))
+        do (sleep (* 0.01 (random 100))))))
+
+  (callback-promise-future-demo)
+
+
+  (defun list-of-promises-future-demo (n)
+    (let* ((promises (make-list n :initial-element nil))
+           (stream *query-io*))
+      (dotimes (i n)
+        (let* ((number (progn
+                         (princ (format stream "~%Enter a number (~d): " i))
+                         (read)))
+               (promise (promise)))
+          (future
+            (sleep (random 10))
+            (fulfill promise (* number number))
+            (force (future
+                     (sleep 1)
+                     (format stream "~%Square of ~d = ~d"
+                             number
+                             (force promise)))))
+          (setf (nth i promises) promise)))
+      (loop
+        do (sleep 1)
+        until (loop for p in promises always (fulfilledp p))
+        finally (progn (sleep 2) (return)))))
+
+  (list-of-promises-future-demo 3)
+
+
+  (defun add-numbers (numbers)
+    (if (= (length numbers) 2)
+        (+ (first numbers)
+           (second numbers))
+        (let* ((split-numbers (floor (length numbers) 2))
+               (first-half (subseq numbers 0 split-numbers))
+               (second-half (subseq numbers split-numbers))
+               (promise (promise)))
+          (dbg "first-half ~A~%" first-half)
+          (dbg "second-half ~A~%" second-half)
+          (future
+            (force (future (add-numbers first-half)))
+            (let ((first-result (force promise)))
+              (force (future (add-numbers second-half)))
+              (let ((second-result (force promise)))
+                (fulfill promise (+ first-result second-result))
+                (format t "First half: ~a, Second half: ~a, Result: ~a~%" first-result second-result (force promise))
+                (force promise)))))))
+
+  (add-numbers '(1 2 3 4 5))
+#+END_SRC
+
+
+* TODO TMP
+
+- Получение и обработка изображения
+  - Выделение строк в тексте
+  - Деление блока по вертикальным белым просветам
+    - Вертикальная проекция - просто посмотреть сколько белых пикселей в каждой строчке и найти белые просветы в этих проекциях; все что находится между этими белыми просветами - это строчки
+    - Горизонтальная проекция сегментирует слова (широкие просветы) и символы (узкие просветы)
+    - OverSegmetation - строим структуру "граф линейного деления" - набор гипотез где могут быть отдельные символы - для каждого ребра этого графа нужно произвести символьное распознавание, в итоговом графе найти наилучший путь, опираясь на результаты распознавание отдельных символов и какую-то контекстную информацию.
+    - Выбор в пайплайне - задача для обучения с подкреплением.
+- Анализ структуры страницы
+- Распознавание текста
+- Синтез документа из распознаных фрагментов
+- Сохранение в нужном формате
+
+Структура сети (LSTM):
+- Сверточный блок (CNN) - извлекает последовательность визуальных признаков
+- Рекуррентный блок  (RNN) - делает предсказания символов
+
+SegLink - Segmens and Link:
+- Сегменты - это квадратные участки изображения
+- Те сегменты что лежат внутри одного бокса (они в одном слове) мы соединяем линками - это ребро графа
+- Сеть предсказывает эти сегменты и линки.
+- Работать на нескольких масштабах - 64*64, 32*32, тогда добавляются линки между сегментами разных масштабов
+- Кластеризация segments через links с помощью нахождения компонентов связности через dfs
+- Segments из одного кластера используют для построения итогового bbox-a
+
+Восстановление ошибок распознавание по словарю
+
+Извлечение смысла с chatGPT и классификаторами
+
+#+NAME: min
+#+BEGIN_SRC lisp :tangle ./src/tmp.lisp :noweb yes :exports code
+  <<min>>
+
+  <<queue>>
+
+  <<task>>
+
+  <<x_snapshot>>
+
+  ;; (x-snapshot :path "x-snapshot-true-color.png")
 #+END_SRC
 
 * TODO Terminating lazy threads
@@ -2099,102 +2459,6 @@ The rest of the logic of the work will be encapsulated in the correct order of r
 После получения размеров экрана мы сохраняем их в глобальные переменные вида ~default-*~, чтобы после работать с ними напрямую - за это отвечает вызов функции ~init-defaults~.
 
 При формировании скришота мы перекодируем его функцией ~raw-image->png~. При оптимизации эту перекодировку следует удалить, чтобы ускорить работу, но пока нам требуется отлаживаемость а не скорость.
-
-#+NAME: x_snapshot
-#+BEGIN_SRC lisp :padline no
-  (defmacro with-display (host (display screen root-window) &body body)
-    `(let* ((,display (xlib:open-display ,host))
-            (,screen (first (xlib:display-roots ,display)))
-            (,root-window (xlib:screen-root ,screen)))
-       (unwind-protect (progn ,@body)
-         (xlib:close-display ,display))))
-
-  (defmacro with-default-display ((display &key (force nil)) &body body)
-    `(let ((,display (xlib:open-default-display)))
-       (unwind-protect
-            (unwind-protect
-                 ,@body
-              (when ,force
-                (xlib:display-force-output ,display)))
-         (xlib:close-display ,display))))
-
-  (defmacro with-default-display-force ((display) &body body)
-    `(with-default-display (,display :force t) ,@body))
-
-  (defmacro with-default-screen ((screen) &body body)
-    (let ((display (gensym)))
-      `(with-default-display (,display)
-         (let ((,screen (xlib:display-default-screen ,display)))
-           ,@body))))
-
-  (defmacro with-default-window ((window) &body body)
-    (let ((screen (gensym)))
-      `(with-default-screen (,screen)
-         (let ((,window (xlib:screen-root ,screen)))
-           ,@body))))
-
-  (defun x-size ()
-    (with-default-screen (s)
-      (values
-       (xlib:screen-width s)
-       (xlib:screen-height s))))
-
-  (defparameter *default-x* 0)
-  (defparameter *default-y* 0)
-  (defparameter *default-width* 800)
-  (defparameter *default-height* 600)
-
-  (defun init-defaults ()
-    (multiple-value-bind (width height)
-        (x-size)
-      (setf *default-width* width
-            ,*default-height* height
-            ,*default-x* 0
-            ,*default-y* 0)))
-
-  (init-defaults)
-
-  (defun raw-image->png (data width height)
-    (let* ((png (make-instance 'zpng:png :width width :height height
-                               :color-type :truecolor-alpha
-                               :image-data data))
-           (data (zpng:data-array png)))
-      (dotimes (y height)
-        (dotimes (x width)
-          ;; BGR -> RGB, ref code: https://goo.gl/slubfW
-          ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
-          (rotatef (aref data y x 0) (aref data y x 2))
-          (setf (aref data y x 3) 255)))
-      png))
-
-  (defun x-snapshot (&key (x *default-x*) (y *default-y*)
-                       (width  *default-width*) (height *default-height*)
-                       path)
-    ;; "Return RGB data array (The dimensions correspond to the height, width,
-    ;; and pixel components, see comments in x-snapsearch for more details),
-    ;; or write to file (PNG only), depend on if you provide the path keyword"
-    (with-default-window (w)
-      (let ((image
-             (raw-image->png
-              (xlib:get-raw-image w :x x :y y
-                                  :width width :height height
-                                  :format :z-pixmap)
-              width height)
-            ))
-        (if path
-            (let* ((ext (pathname-type path))
-                   (path
-                    (if ext
-                        path
-                        (concatenate 'string path ".png")))
-                   (png? (or (null ext) (equal ext "png"))))
-              (cond
-                (png? (zpng:write-png image path))
-                (t (error "Only PNG file is supported"))))
-            (zpng:data-array image)))))
-
-  ;; (x-snapshot :path "x-snapshot-true-color.png")
-#+END_SRC
 
 * Operator's Loop
 
