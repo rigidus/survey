@@ -794,7 +794,22 @@ How to make screenshot:
 #+BEGIN_SRC lisp
   (ql:quickload "lparallel")
   (ql:quickload "serapeum")
+  (ql:quickload "bt-semaphore")
+  (use-package :lparallel)
+  (use-package :lparallel.queue)
+  (use-package :bt-semaphore)
 
+  (defun init ()
+    (setf lparallel:*kernel*
+          (lparallel:make-kernel (serapeum:count-cpus)
+                                 :name "channel-queue-kernel")))
+  (init)
+
+
+  (defun shutdown ()
+    (end-kernel :wait t))
+
+  ;; (shutdown)
 
   (defun show-kernel-info ()
     (let ((name (lparallel:kernel-name))
@@ -808,26 +823,6 @@ How to make screenshot:
 
   (show-kernel-info)
 
-  (lparallel:end-kernel :wait t)
-
-
-  (ql:quickload "bt-semaphore")
-
-  (use-package :lparallel)
-  (use-package :lparallel.queue)
-  (use-package :bt-semaphore)
-
-  (defun init ()
-    (setf lparallel:*kernel*
-          (lparallel:make-kernel (serapeum:count-cpus)
-                                 :name "channel-queue-kernel")))
-
-  (init)
-
-  (defun shutdown ()
-    (end-kernel :wait t))
-
-  (shutdown)
 
   (defun calculate-square (n)
     (let* ((channel (lparallel:make-channel))
@@ -839,7 +834,8 @@ How to make screenshot:
       (setf res (lparallel:receive-result channel))
       (format t "Square of ~d = ~d~%" n res)))
 
-  ;; (calculate-square 25)
+  (calculate-square 25)
+
 
   (defun test-basic-channel-multiple-tasks ()
     (let ((channel (make-channel))
@@ -856,8 +852,8 @@ How to make screenshot:
       (dotimes (i 3 res)
         (push (receive-result channel) res))))
 
-
   (test-basic-channel-multiple-tasks)
+
 
   (defun test-promise ()
     (let ((p (promise)))
@@ -869,6 +865,7 @@ How to make screenshot:
       (force p)))
 
   (test-promise)
+
 
   (defun promise-with-threads ()
     (let ((p (promise))
@@ -894,6 +891,7 @@ How to make screenshot:
 
   (promise-with-threads)
 
+
   (defun test-future ()
     (let ((f (future
                (sleep (random 5))
@@ -906,19 +904,6 @@ How to make screenshot:
       (format t "~d~%" (force f))))
 
   (test-future)
-
-
-  (ql:quickload "lparallel")
-  (ql:quickload "serapeum")
-  (ql:quickload "bt-semaphore")
-  (use-package :lparallel)
-  (use-package :lparallel.queue)
-  (use-package :bt-semaphore)
-  (defun init ()
-    (setf lparallel:*kernel*
-          (lparallel:make-kernel (serapeum:count-cpus)
-                                 :name "channel-queue-kernel")))
-  (init)
 
 
   (defun callback-promise-future-demo ()
@@ -964,28 +949,6 @@ How to make screenshot:
         finally (return (loop for f in futures collect (force f))))))
 
   (list-of-promises-future-demo 3)
-
-
-  (defun add-numbers (numbers)
-    (if (= (length numbers) 2)
-        (+ (first numbers)
-           (second numbers))
-        (let* ((split-numbers (floor (length numbers) 2))
-               (first-half (subseq numbers 0 split-numbers))
-               (second-half (subseq numbers split-numbers))
-               (promise (promise)))
-          (dbg "first-half ~A~%" first-half)
-          (dbg "second-half ~A~%" second-half)
-          (future
-            (force (future (add-numbers first-half)))
-            (let ((first-result (force promise)))
-              (force (future (add-numbers second-half)))
-              (let ((second-result (force promise)))
-                (fulfill promise (+ first-result second-result))
-                (format t "First half: ~a, Second half: ~a, Result: ~a~%" first-result second-result (force promise))
-                (force promise)))))))
-
-  (add-numbers '(1 2 3 4 5))
 #+END_SRC
 
 
