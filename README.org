@@ -685,110 +685,6 @@ Now we need to form tasks, which we will pass in the chain. Each task will captu
     ((initial :accessor initial)))
 #+END_SRC
 
-* Screenshot
-
-How to make screenshot:
-
-#+NAME: x_snapshot
-#+BEGIN_SRC lisp :padline no
-  (ql:quickload "clx")
-  (ql:quickload "zpng")
-
-  (defmacro with-display (host (display screen root-window) &body body)
-    `(let* ((,display (xlib:open-display ,host))
-            (,screen (first (xlib:display-roots ,display)))
-            (,root-window (xlib:screen-root ,screen)))
-       (unwind-protect (progn ,@body)
-         (xlib:close-display ,display))))
-
-  (defmacro with-default-display ((display &key (force nil)) &body body)
-    `(let ((,display (xlib:open-default-display)))
-       (unwind-protect
-            (unwind-protect
-                 ,@body
-              (when ,force
-                (xlib:display-force-output ,display)))
-         (xlib:close-display ,display))))
-
-  (defmacro with-default-display-force ((display) &body body)
-    `(with-default-display (,display :force t) ,@body))
-
-  (defmacro with-default-screen ((screen) &body body)
-    (let ((display (gensym)))
-      `(with-default-display (,display)
-         (let ((,screen (xlib:display-default-screen ,display)))
-           ,@body))))
-
-  (defmacro with-default-window ((window) &body body)
-    (let ((screen (gensym)))
-      `(with-default-screen (,screen)
-         (let ((,window (xlib:screen-root ,screen)))
-           ,@body))))
-
-  (defun x-size ()
-    (with-default-screen (s)
-      (values
-       (xlib:screen-width s)
-       (xlib:screen-height s))))
-
-  (defparameter *default-x* 0)
-  (defparameter *default-y* 0)
-  (defparameter *default-width* 800)
-  (defparameter *default-height* 600)
-
-  (defun init-defaults ()
-    (multiple-value-bind (width height)
-        (x-size)
-      (setf *default-width* width
-            ,*default-height* height
-            ,*default-x* 0
-            ,*default-y* 0)))
-
-  (init-defaults)
-
-  (defun raw-image->png (data width height)
-    (let* ((png (make-instance 'zpng:png :width width :height height
-                               :color-type :truecolor-alpha
-                               :image-data data))
-           (data (zpng:data-array png)))
-      (dotimes (y height)
-        (dotimes (x width)
-          ;; BGR -> RGB, ref code: https://goo.gl/slubfW
-          ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
-          (rotatef (aref data y x 0) (aref data y x 2))
-          (setf (aref data y x 3) 255)))
-      png))
-
-  (defun x-snapshot (&key (x *default-x*) (y *default-y*)
-                       (width  *default-width*) (height *default-height*)
-                       path)
-    ;; "Return RGB data array (The dimensions correspond to the height, width,
-    ;; and pixel components, see comments in x-snapsearch for more details),
-    ;; or write to file (PNG only), depend on if you provide the path keyword"
-    (with-default-window (w)
-      (let ((image
-             (raw-image->png
-              (xlib:get-raw-image w :x x :y y
-                                  :width width :height height
-                                  :format :z-pixmap)
-              width height)
-            ))
-        (if path
-            (let* ((ext (pathname-type path))
-                   (path
-                    (if ext
-                        path
-                        (concatenate 'string path ".png")))
-                   (png? (or (null ext) (equal ext "png"))))
-              (cond
-                (png? (zpng:write-png image path))
-                (t (error "Only PNG file is supported"))))
-            (zpng:data-array image)))))
-
-  ;; (x-snapshot :path "x-snapshot-true-color.png")
-#+END_SRC
-
-
 * Lparallel
 
 #+BEGIN_SRC lisp
@@ -949,8 +845,282 @@ How to make screenshot:
         finally (return (loop for f in futures collect (force f))))))
 
   (list-of-promises-future-demo 3)
+
+
+  (defun test-queue-properties ()
+    (let ((queue (make-queue :fixed-capacity 5)))
+      (loop
+        when (queue-full-p queue)
+          do (return)
+        do (push-queue (random 100) queue))
+      (print (queue-full-p queue))
+      (loop
+        when (queue-empty-p queue)
+          do (return)
+        do (print (pop-queue queue)))
+      (print (queue-empty-p queue)))
+    nil)
+
+  (test-queue-properties)
+
+  (defun test-basic-queue ()
+    (let ((queue (make-queue))
+          (channel (make-channel))
+          (res '()))
+      (submit-task channel
+                   #'(lambda ()
+                       (loop for entry = (pop-queue queue)
+                             when (queue-empty-p queue)
+                               do (return)
+                             do (push (* entry entry) res))))
+      (dotimes (i 100)
+        (push-queue i queue))
+      (receive-result channel)
+      (format t "~{~d ~}~%" res)))
+
+  (test-basic-queue)
 #+END_SRC
 
+* Screenshot
+
+How to make screenshot:
+
+#+NAME: x_snapshot
+#+BEGIN_SRC lisp :padline no
+  (ql:quickload "clx")
+  (ql:quickload "zpng")
+
+  (defmacro with-display (host (display screen root-window) &body body)
+    `(let* ((,display (xlib:open-display ,host))
+            (,screen (first (xlib:display-roots ,display)))
+            (,root-window (xlib:screen-root ,screen)))
+       (unwind-protect (progn ,@body)
+         (xlib:close-display ,display))))
+
+  (defmacro with-default-display ((display &key (force nil)) &body body)
+    `(let ((,display (xlib:open-default-display)))
+       (unwind-protect
+            (unwind-protect
+                 ,@body
+              (when ,force
+                (xlib:display-force-output ,display)))
+         (xlib:close-display ,display))))
+
+  (defmacro with-default-display-force ((display) &body body)
+    `(with-default-display (,display :force t) ,@body))
+
+  (defmacro with-default-screen ((screen) &body body)
+    (let ((display (gensym)))
+      `(with-default-display (,display)
+         (let ((,screen (xlib:display-default-screen ,display)))
+           ,@body))))
+
+  (defmacro with-default-window ((window) &body body)
+    (let ((screen (gensym)))
+      `(with-default-screen (,screen)
+         (let ((,window (xlib:screen-root ,screen)))
+           ,@body))))
+
+  (defun x-size ()
+    (with-default-screen (s)
+      (values
+       (xlib:screen-width s)
+       (xlib:screen-height s))))
+
+  (defparameter *default-x* 0)
+  (defparameter *default-y* 0)
+  (defparameter *default-width* 800)
+  (defparameter *default-height* 600)
+
+  (defun init-defaults ()
+    (multiple-value-bind (width height)
+        (x-size)
+      (setf *default-width* width
+            ,*default-height* height
+            ,*default-x* 0
+            ,*default-y* 0)))
+
+  (init-defaults)
+
+  (defun raw-image->png (data width height)
+    (let* ((png (make-instance 'zpng:png :width width :height height
+                               :color-type :truecolor-alpha
+                               :image-data data))
+           (data (zpng:data-array png)))
+      (dotimes (y height)
+        (dotimes (x width)
+          ;; BGR -> RGB, ref code: https://goo.gl/slubfW
+          ;; diffs between RGB and BGR: https://goo.gl/si1Ft5
+          (rotatef (aref data y x 0) (aref data y x 2))
+          (setf (aref data y x 3) 255)))
+      png))
+
+  (defun x-snapshot (&key (x *default-x*) (y *default-y*)
+                       (width  *default-width*) (height *default-height*)
+                       path)
+    ;; "Return RGB data array (The dimensions correspond to the height, width,
+    ;; and pixel components, see comments in x-snapsearch for more details),
+    ;; or write to file (PNG only), depend on if you provide the path keyword"
+    (with-default-window (w)
+      (let ((image
+             (raw-image->png
+              (xlib:get-raw-image w :x x :y y
+                                  :width width :height height
+                                  :format :z-pixmap)
+              width height)
+            ))
+        (if path
+            (let* ((ext (pathname-type path))
+                   (path
+                    (if ext
+                        path
+                        (concatenate 'string path ".png")))
+                   (png? (or (null ext) (equal ext "png"))))
+              (cond
+                (png? (zpng:write-png image path))
+                (t (error "Only PNG file is supported"))))
+            ;; else - return image array
+            (zpng:data-array image)))))
+
+  ;; (x-snapshot :path "x-snapshot-true-color.png")
+#+END_SRC
+
+* Cutting
+
+#+BEGIN_SRC lisp
+  (ql:quickload "png-read")
+
+  ;; Ошибка, возникающая когда мы пытаемся прочитать png
+  ;; в котором неизвестно сколько байт на точку
+  (define-condition unk-png-color-type (error)
+    ((color :initarg :color :reader color))
+    (:report
+     (lambda (condition stream)
+       (format stream "Error in LOAD-PNG: unknown color type: ~A"
+               (color condition)))))
+
+  (defun load-png (pathname-str)
+    "Возвращает массив size-X столбцов по size-Y точек,
+     где столбцы идут слева-направо, а точки в них - сверху-вниз
+     ----
+     В zpng есть указание на возможные варианты COLOR:
+     ----
+           (defmethod samples-per-pixel (png)
+             (ecase (color-type png)
+               (:grayscale 1)
+               (:truecolor 3)
+               (:indexed-color 1)
+               (:grayscale-alpha 2)
+               (:truecolor-alpha 4)))
+    "
+    (let* ((png (png-read:read-png-file pathname-str))
+           (image-data (png-read:image-data png))
+           (color (png-read:colour-type png))
+           (dims (cond ((or (equal color :truecolor-alpha)
+                            (equal color :truecolor))
+                        (list (array-dimension image-data 1)
+                              (array-dimension image-data 0)
+                              (array-dimension image-data 2)))
+                       ((or (equal color :grayscale)
+                            (equal color :greyscale))
+                        (list (array-dimension image-data 1)
+                              (array-dimension image-data 0)))
+                       (t (error 'unk-png-color-type :color color))))
+           (result ;; меняем размерности X и Y местами
+             (make-array dims :element-type '(unsigned-byte 8))))
+      ;; (format t "~% new-arr ~A "(array-dimensions result))
+      ;; ширина, высота, цвет => высота, ширина, цвет
+      (macrolet ((cycle (&body body)
+                   `(do ((y 0 (incf y)))
+                        ((= y (array-dimension result 0)))
+                      (do ((x 0 (incf x)))
+                          ((= x (array-dimension result 1)))
+                        ,@body))))
+        (cond ((or (equal color :truecolor-alpha)
+                   (equal color :truecolor))
+               (cycle (do ((z 0 (incf z)))
+                          ((= z (array-dimension result 2)))
+                        (setf (aref result y x z)
+                              (aref image-data x y z)))))
+              ((or (equal color :grayscale)
+                   (equal color :greyscale))
+               (cycle (setf (aref result y x)
+                            (aref image-data x y))))
+              (t (error 'unk-png-color-type :color color)))
+        result)))
+
+  ;; TEST: equality screenshot and load-file-data
+  (assert (equalp (progn
+                    (x-snapshot :path "s0.png")
+                    (load-png "s0.png"))
+                  (x-snapshot)))
+
+  ;; (define-alien-variable ("dynamic_space_size" dynamic-space-size-bytes)
+  ;;   unsigned-long)
+
+  ;; (defun heap-n-bytes ()
+  ;;   (+ dynamic-space-size-bytes
+  ;;      (- sb-vm::read-only-space-end sb-vm::read-only-space-start)
+  ;;      (- sb-vm::static-space-end sb-vm::static-space-start)))
+
+  ;; (defun get-heap-size-in-gb ()
+  ;;   (floor
+  ;;    (floor
+  ;;     (heap-n-bytes)
+  ;;     1024)
+  ;;    1024))
+
+  ;; (get-heap-size-in-gb)
+
+  (ql:quickload "png")
+
+  (defun rotate (input-pathname output-pathname)
+    "Read a PNG image, rotate it 90 degrees, and write it to a new file."
+    (let* ((old (with-open-file (input input-pathname
+                                       :element-type '(unsigned-byte 8))
+                  (png:decode input)))
+           (new (png:make-image (png:image-width old)
+                                (png:image-height old)
+                                (png:image-channels old)
+                                (png:image-bit-depth old)))
+           (m (png:image-width old)))
+      (dotimes (i (png:image-height new))
+        (dotimes (j (png:image-width new))
+          (dotimes (k (png:image-channels new))
+            (setf (aref new i j k)
+                  (aref old j (- m i 1) k)))))
+      (with-open-file (output output-pathname :element-type '(unsigned-byte 8)
+                                              :direction :output :if-exists :supersede)
+        (png:encode new output))))
+
+  (rotate "x-snapshot-true-color.png" "x2.png")
+
+
+  (defun copy-png (input-pathname output-pathname)
+    "Read a PNG image, rotate it 90 degrees, and write it to a new file."
+    (let* ((old (with-open-file
+                    (input input-pathname :element-type '(unsigned-byte 8))
+                  (png:decode input)))
+           (width      (png:image-width old))
+           (height     (png:image-height old))
+           (channels   (png:image-channels old))
+           (bit-depth  (png:image-bit-depth old))
+           (new        (png:make-image height width channels bit-depth)))
+      (print `(:width ,width :height ,height :channels
+                      ,channels :bit-depth ,bit-depth))
+      (dotimes (xx width)
+        (dotimes (yy height)
+          (dotimes (zz (png:image-channels new))
+            (setf (aref new yy xx zz)
+                  (aref old yy xx zz)))))
+      (with-open-file
+          (output output-pathname
+                  :element-type '(unsigned-byte 8)
+                  :direction :output :if-exists :supersede)
+        (png:encode new output))))
+
+  (copy-png "min.png" "min2.png")
+#+END_SRC
 
 * TODO TMP
 
