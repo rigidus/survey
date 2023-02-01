@@ -1093,11 +1093,10 @@ How to make screenshot:
                                               :direction :output :if-exists :supersede)
         (png:encode new output))))
 
-  (rotate "x-snapshot-true-color.png" "x2.png")
+  ;; (rotate "x-snapshot-true-color.png" "x2.png")
 
 
   (defun copy-png (input-pathname output-pathname)
-    "Read a PNG image, rotate it 90 degrees, and write it to a new file."
     (let* ((old (with-open-file
                     (input input-pathname :element-type '(unsigned-byte 8))
                   (png:decode input)))
@@ -1105,21 +1104,103 @@ How to make screenshot:
            (height     (png:image-height old))
            (channels   (png:image-channels old))
            (bit-depth  (png:image-bit-depth old))
-           (new        (png:make-image height width channels bit-depth)))
+           (new        (png:make-image height width channels bit-depth))
+           (color      (make-array (png:image-channels old)
+                                   :element-type '(unsigned-byte 8))))
       (print `(:width ,width :height ,height :channels
                       ,channels :bit-depth ,bit-depth))
-      (dotimes (xx width)
-        (dotimes (yy height)
-          (dotimes (zz (png:image-channels new))
-            (setf (aref new yy xx zz)
-                  (aref old yy xx zz)))))
+      (dotimes (yy height)
+        (let ((yy-8-p  (= 0 (logand yy (+ -1 8))))
+              (yy-8-np (= 7 (logand yy (+ -1 8)))))
+        (dotimes (xx width)
+          (let ((xx-8-p  (= 0 (logand xx (+ -1 8))))
+                (xx-8-np (= 7 (logand xx (+ -1 8)))))
+            (dotimes (zz channels)
+              ;; (print (array-row-major-index old yy xx zz))
+              (setf (aref new yy xx zz)
+                    (aref old yy xx zz)))
+            (when xx-8-p
+              (setf (aref new yy xx 0) 255)
+              (setf (aref new yy xx 1) 0)
+              (setf (aref new yy xx 2) 0))
+            (when xx-8-np
+              (setf (aref new yy xx 0) 0)
+              (setf (aref new yy xx 1) 255)
+              (setf (aref new yy xx 2) 0))
+            (when yy-8-p
+              (setf (aref new yy xx 0) 255)
+              (setf (aref new yy xx 1) 255)
+              (setf (aref new yy xx 2) 0))
+            (when yy-8-np
+              (setf (aref new yy xx 0) 0)
+              (setf (aref new yy xx 1) 255)
+              (setf (aref new yy xx 2) 255))
+            ))))
       (with-open-file
           (output output-pathname
                   :element-type '(unsigned-byte 8)
                   :direction :output :if-exists :supersede)
         (png:encode new output))))
 
-  (copy-png "min.png" "min2.png")
+  (copy-png "min.png" "333333333.png")
+
+            ;; (let ((match-p))
+            ;;   (if eight-p
+            ;;       (progn  ;; save color
+            ;;         (dotimes (zz channels)
+            ;;           (setf (aref color zz)
+            ;;                 (aref old yy xx zz)))
+            ;;         (setf match-p t))
+            ;;       ;; else
+            ;;       (dotimes (zz channels)
+            ;;         (unless (= (aref color zz)
+            ;;                    (aref old yy xx zz))
+            ;;           (setf match-p nil)
+            ;;           (return-from match-block))))
+              ;; (when eight-np
+              ;;   (loop for back-yy from (logand yy (lognot 7)) to yy do
+              ;; ))
+              ;; (if match-p
+              ;;           (progn
+              ;;             (dotimes (zz channels)
+              ;;               (setf (aref new yy xx zz) 255))
+              ;;             (setf (aref new yy xx 0) 0)
+              ;;             (setf (aref new yy xx 1) 255)
+              ;;             (setf (aref new yy xx 2) 0)
+              ;;             )
+              ;;           ;; else
+              ;;           (dotimes (zz channels)
+              ;;             (setf (aref new yy xx zz)
+              ;;                   (aref old yy xx zz))))
+              ;; (when (and match-p eight-np)
+              ;;         (loop for back-yy from (logand yy (lognot 7)) to yy do
+              ;;           ;; (dotimes (zz channels)
+              ;;           ;;   (setf (aref new back-yy xx zz) 0))
+              ;;           (setf (aref new back-yy xx 0) 255)
+              ;;           (setf (aref new back-yy xx 1) 0)
+              ;;           (setf (aref new back-yy xx 2) 0)))
+              ))))
+      (with-open-file
+          (output output-pathname
+                  :element-type '(unsigned-byte 8)
+                  :direction :output :if-exists :supersede)
+        (png:encode new output))))
+
+  (copy-png "x-snapshot-true-color.png" "min3.png")
+
+  (dotimes (zz 64)
+    (if (= 0 (logand zz (+ -1 8)))
+        (progn ;; save color
+          (format t "~%[~A] " zz)
+          )
+        ;; else
+        (progn ;; check color
+          (format t "~A " zz)
+          ;; (when (evenp zz)
+            (format t " (~A)  "
+                    (logand zz (lognot 7))))))
+
+  (logiore(lognot 7)
 #+END_SRC
 
 * TODO TMP
