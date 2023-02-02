@@ -988,114 +988,6 @@ How to make screenshot:
 * Cutting
 
 #+BEGIN_SRC lisp
-  (ql:quickload "png-read")
-
-  ;; Ошибка, возникающая когда мы пытаемся прочитать png
-  ;; в котором неизвестно сколько байт на точку
-  (define-condition unk-png-color-type (error)
-    ((color :initarg :color :reader color))
-    (:report
-     (lambda (condition stream)
-       (format stream "Error in LOAD-PNG: unknown color type: ~A"
-               (color condition)))))
-
-  (defun load-png (pathname-str)
-    "Возвращает массив size-X столбцов по size-Y точек,
-     где столбцы идут слева-направо, а точки в них - сверху-вниз
-     ----
-     В zpng есть указание на возможные варианты COLOR:
-     ----
-           (defmethod samples-per-pixel (png)
-             (ecase (color-type png)
-               (:grayscale 1)
-               (:truecolor 3)
-               (:indexed-color 1)
-               (:grayscale-alpha 2)
-               (:truecolor-alpha 4)))
-    "
-    (let* ((png (png-read:read-png-file pathname-str))
-           (image-data (png-read:image-data png))
-           (color (png-read:colour-type png))
-           (dims (cond ((or (equal color :truecolor-alpha)
-                            (equal color :truecolor))
-                        (list (array-dimension image-data 1)
-                              (array-dimension image-data 0)
-                              (array-dimension image-data 2)))
-                       ((or (equal color :grayscale)
-                            (equal color :greyscale))
-                        (list (array-dimension image-data 1)
-                              (array-dimension image-data 0)))
-                       (t (error 'unk-png-color-type :color color))))
-           (result ;; меняем размерности X и Y местами
-             (make-array dims :element-type '(unsigned-byte 8))))
-      ;; (format t "~% new-arr ~A "(array-dimensions result))
-      ;; ширина, высота, цвет => высота, ширина, цвет
-      (macrolet ((cycle (&body body)
-                   `(do ((y 0 (incf y)))
-                        ((= y (array-dimension result 0)))
-                      (do ((x 0 (incf x)))
-                          ((= x (array-dimension result 1)))
-                        ,@body))))
-        (cond ((or (equal color :truecolor-alpha)
-                   (equal color :truecolor))
-               (cycle (do ((z 0 (incf z)))
-                          ((= z (array-dimension result 2)))
-                        (setf (aref result y x z)
-                              (aref image-data x y z)))))
-              ((or (equal color :grayscale)
-                   (equal color :greyscale))
-               (cycle (setf (aref result y x)
-                            (aref image-data x y))))
-              (t (error 'unk-png-color-type :color color)))
-        result)))
-
-  ;; TEST: equality screenshot and load-file-data
-  (assert (equalp (progn
-                    (x-snapshot :path "s0.png")
-                    (load-png "s0.png"))
-                  (x-snapshot)))
-
-  ;; (define-alien-variable ("dynamic_space_size" dynamic-space-size-bytes)
-  ;;   unsigned-long)
-
-  ;; (defun heap-n-bytes ()
-  ;;   (+ dynamic-space-size-bytes
-  ;;      (- sb-vm::read-only-space-end sb-vm::read-only-space-start)
-  ;;      (- sb-vm::static-space-end sb-vm::static-space-start)))
-
-  ;; (defun get-heap-size-in-gb ()
-  ;;   (floor
-  ;;    (floor
-  ;;     (heap-n-bytes)
-  ;;     1024)
-  ;;    1024))
-
-  ;; (get-heap-size-in-gb)
-
-  (defun rotate (input-pathname output-pathname)
-    "Read a PNG image, rotate it 90 degrees, and write it to a new file."
-    (let* ((old (with-open-file (input input-pathname
-                                       :element-type '(unsigned-byte 8))
-                  (png:decode input)))
-           (new (png:make-image (png:image-width old)
-                                (png:image-height old)
-                                (png:image-channels old)
-                                (png:image-bit-depth old)))
-           (m (png:image-width old)))
-      (dotimes (i (png:image-height new))
-        (dotimes (j (png:image-width new))
-          (dotimes (k (png:image-channels new))
-            (setf (aref new i j k)
-                  (aref old j (- m i 1) k)))))
-      (with-open-file (output output-pathname :element-type '(unsigned-byte 8)
-                                              :direction :output :if-exists :supersede)
-        (png:encode new output))))
-
-  ;; (rotate "x-snapshot-true-color.png" "x2.png")
-
-
-
-
   (ql:quickload "png")
 
   (defun copy-png (input-pathname output-pathname)
@@ -1109,46 +1001,70 @@ How to make screenshot:
            (new        (png:make-image height width channels bit-depth)))
       (print `(:width ,width :height ,height :channels
                       ,channels :bit-depth ,bit-depth))
-      (dotimes (yy height)
-        (let ((yy-8-p  (= 0 (logand yy (+ -1 8))))
-              (yy-8-np (= 7 (logand yy (+ -1 8)))))
-              (do* ((xx       0    (+ 1 xx))
-                    (xx-8-p   nil  (= 0 (logand xx 7)))
-                    (xx-8-np  nil  (= 7 (logand xx 7)))
-                    (tail-p   nil  (= (logand xx -8) (logand width -8)))
-                    (xx-same  t)
-                    (xx-color (make-array channels :element-type
-                                          '(unsigned-byte 8))))
-                   ((>= xx width))
-                (dotimes (zz channels) ;; draw
-                  (setf (aref new yy xx zz)  (aref old yy xx zz)))
-                (if xx-8-p
-                    (progn
-                      (setf xx-same t)       ;; set flag
-                      (dotimes (zz channels) ;; save to COLOR
-                        (setf (aref xx-color zz)
-                              (aref old yy xx zz))))
-                    ;; else
-                    (progn
-                      (when xx-same
-                        ;; check the same COLOR - if not: unset not-xx-same flag
-                        (block not-xx-same
-                          (dotimes (zz channels)
-                            (unless (equal (aref xx-color zz)
-                                           (aref old yy xx zz))
-                              (setf xx-same nil)
-                              (return-from not-xx-same)))))
-                      (unless xx-same
-                        (setf xx (logior xx 7))
-                        (go xx-cont))))
-               xx-cont
-                (when xx-8-np
-                  (dotimes (fx 8)
-                    (let ((ox (+ (logand xx -8) fx)))
-                      (unless (>= ox width)
-                        (dotimes (zz channels)
-                          (setf (aref new yy xx zz)
-                                (aref xx-color zz))))))))))
+      (do* ((yy 0 (+ 1 yy))
+            (yy-8-p   nil  (= 0 (logand yy 7)))
+            (yy-8-np  nil  (= 7 (logand yy 7)))
+            (yy-same  t)
+            (yy-color (make-array channels :element-type
+                                  '(unsigned-byte 8))))
+           ((>= yy height))
+        (do* ((xx       0    (+ 1 xx))
+              (xx-8-p   nil  (= 0 (logand xx 7)))
+              (xx-8-np  nil  (= 7 (logand xx 7)))
+              (xx-same  t)
+              (xx-color (make-array channels :element-type
+                                    '(unsigned-byte 8))))
+             ((>= xx width))
+          (dotimes (zz channels) ;; draw
+            (setf (aref new yy xx zz)  (aref old yy xx zz)))
+          (if xx-8-p
+              (progn
+                (setf xx-same t)       ;; set flag
+                (dotimes (zz channels) ;; save to COLOR
+                  (setf (aref xx-color zz)
+                        (aref old yy xx zz))))
+              ;; else
+              (progn
+                (when xx-same
+                  ;; check the same COLOR - if not: unset not-xx-same flag
+                  (block not-xx-same
+                    (dotimes (zz channels)
+                      (unless (equal (aref xx-color zz)
+                                     (aref old yy xx zz))
+                        (setf xx-same nil)
+                        (return-from not-xx-same)))))
+                (unless xx-same
+                  (setf xx (logior xx 7))
+                  (go xx-cont))))
+         xx-cont
+          (when xx-8-np
+            (dotimes (fx 8)
+              (let ((ox (+ (logand xx -8) fx)))
+                (unless (>= ox width)
+                  (dotimes (zz channels)
+                    (setf (aref new yy xx zz)
+                          (aref xx-color zz)))))))) ;; end do x
+        ;; ...
+        (if (and yy-8-p)
+            (progn
+              (setf yy-same t))
+            ;; else
+            (progn
+              (when yy-same
+                (block not-yy-same
+                  ;; ...
+                  ))
+              (unless yy-same
+                ;; (setf yy (logior yy 7))
+                ;; (go yy-cont)
+                )))
+       yy-cont
+        (when yy-8-np
+          (dotimes (fy 8)
+            (let ((oy (+ (logand yy -8) fy)))
+              (unless (>= oy height)
+                ;; TODO: draw rectangle
+                ))))) ;; end do y
       (with-open-file
           (output output-pathname
                   :element-type '(unsigned-byte 8)
