@@ -996,16 +996,26 @@ How to make screenshot:
        (setf (aref new ,yy ,xx 1) ,bb)
        (setf (aref new ,yy ,xx 2) ,cc)))
 
+  (defmacro is-packline-not-the-same-color ()
+    `(block not-the-same
+       (dotimes (zz channels)
+         (unless (= (aref packline start-x zz)
+                    (aref xx-color zz))
+           (return-from not-the-same T)))
+       nil))
+
   (defun copy-png (input-pathname output-pathname)
     (let* ((old (with-open-file
                     (input input-pathname :element-type '(unsigned-byte 8))
                   (png:decode input)))
-           (width      (png:image-width old))
-           (height     (png:image-height old))
+           (width      (logand -8 (png:image-width old)))
+           (height     (logand -8 (png:image-height old)))
            (channels   (png:image-channels old))
            (bit-depth  (png:image-bit-depth old))
            (new        (png:make-image height width channels bit-depth))
-           (packline   (make-array width)))
+           (packflag   (make-array width :element-type '(unsigned-byte 8)))
+           (packline   (make-array `(,width ,channels)
+                                   :element-type '(unsigned-byte 8))))
       (print `(:width ,width :height ,height :channels
                       ,channels :bit-depth ,bit-depth))
       (do* ((yy 0     (+ 1 yy))
@@ -1013,20 +1023,20 @@ How to make screenshot:
             (xx-same  t))
            ((>= yy height))
         (do* ((xx        0    (+ 1 xx))
-              (start-x   0    (logand xx 7))
+              (xx-8-p    nil  (= 0 (logand xx 7)))
               (xx-color  (make-array channels :element-type
                                      '(unsigned-byte 8))))
              ((>= xx width))
-          (dotimes (zz channels) ;; draw
-            (setf (aref new yy xx zz)  (aref old yy xx zz)))
-          (if (= 0 start-x)
-              (progn ;; then - начало линии из восьми точек
+          (if xx-8-p
+              (progn ;; then - начало гориз. линии из восьми точек
                 (setf xx-same t)       ;; set XX-SAME flag
+                (pin yy xx 0 255 0) ;; ~~~~~~~ GREEN
                 (dotimes (zz channels) ;; save to COLOR
                   (setf (aref xx-color zz)
                         (aref old yy xx zz))))
-              (progn ;; else - продолжение линии из восьми точек
+              (progn ;; else - продолжение гориз. линии из восьми точек
                 (when xx-same ;; если цвет не менялся - проверяем еще
+                  (pin yy xx 0 70 0) ;; ~~~~~~~ DARK-GREEN
                   (block not-xx-same
                     (dotimes (zz channels)
                       (unless (equal (aref xx-color zz)
@@ -1034,27 +1044,55 @@ How to make screenshot:
                         (setf xx-same nil) ;; changed - skip rest 1-2
                         (return-from not-xx-same))))) ;; bytes of pnt
                 (unless xx-same ;; поменялся ли цвет после проверки?
-                  (setf xx (logior xx 7))))) ;; да, go to rest of line
-          (when (= 7 (logand xx 7)) ;; rest of line? (вычисляем тут! xx!)
-            (if xx-same ;; если цвет тот же
-                (let ((start-x (logand xx -8)))
-                  (dotimes (fx 8) ;; fill all 8 points
-                    (let ((ox (+ start-x fx))) ;; при смещении
-                      (unless (>= ox width) ;; не за границами ширины
-                        (dotimes (zz channels)
-                          (setf (aref new yy ox zz)
-                                (logand -257 (+ 20 (aref xx-color zz))))))))
-                  ;; inform packline
-                  (setf (aref packline start-x) xx-color))
-                ;; else - цвет не тот же
-                (progn
-                  ;; inform packline
-                  (setf (aref packline start-x) nil)))
-            ;; (unless (>= xx width) ;; не за границами ширины
-            ;;   (pin yy xx 127 0 0))
-            )) ;; end do xx
-        ;; HERE we can analyze packline
-        ) ;; end do yy
+                  (pin yy xx 157 157 0) ;; ~~~~~~~ DARK-YELLOW
+                  (setf xx (logior xx 7))) ;; да, go to rest of line
+                ;; last point of line из 8 точек? XX меняется в теле цикла,
+                (when (= 7 (logand xx 7)) ;;  поэтому важно вычислять на месте
+                  (let ((start-x (logand xx -8))) ;; вычислим начало линии
+                    (if (not xx-same) ;; проверяем, что
+                        (progn ;; цвет другой, значит изменился внутри линии
+                          (pin yy xx 255 255 0) ;; ~~~~~~~ YELLOW
+                          (setf (aref packflag start-x) 0) ;; запишем в packflag
+                          ;; [BUG?] (setf yy (logior yy 7)) ;; skip в правый нижний угол
+                          )
+                        (progn  ;; else - цвет не менялся внутри линии
+                          ;; дальше три варианта:
+                          (if yy-8-p ;; мы в конце первой из 8 строк квадрата
+                              (progn ;; (и цвет гориз. линии не менялся)
+                                (pin yy xx 255 0 255) ;; ~~~~~~~ MAGENTA
+                                ;; установить packflag
+                                (setf (aref packflag start-x) 1)
+                                ;; и записать цвет в packline
+                                (dotimes (zz channels)
+                                  (setf (aref packline start-x zz)
+                                        (aref xx-color zz))))
+                              (progn ;; else - мы в конце НЕ первой из 8 линий
+                                (pin yy xx 255 140 140) ;; ~~~~~~~ PINK
+                                ;; (и цвет гориз. не менялся)
+                                (if (is-packline-not-the-same-color)
+                                    (progn  ;; в packline другой цвет? -
+                                      (pin yy xx 255 255 255) ;; ~~~~~~~ WHITE
+                                      (setf (aref packflag start-x) 0) ;; packflag=0
+                                      ;; (setf yy (logior yy 7)) ;; skip в правый нижний
+                                      )
+                                    ;; else - цвет все тот же
+                                    (progn
+                                      (pin yy xx 90 90 255) ;; ~~~~~~~ SIREN
+                                      (when (= 7 (logand yy 7)) ;; YY меняется в теле цикла,
+                                        ;; поэтому важно вычислять на месте!
+                                        ;; последняя точка последней из 8 линий
+                                        ;; Если мы здесь, то мы находимся в правом
+                                        ;; нижнем углу и цвет всего квадрата тот же
+                                        (pin yy xx 0 0 255) ;; ~~~~~~~ BLUE
+                                        (do* ((start-y (logand yy -8))
+                                              (idx-y 0 (+ 1 idx-y)))
+                                             ((>= idx-y 8))
+                                          (do* ((start-x (logand xx -8))
+                                                (idx-x 0 (+ 1 idx-x)))
+                                               ((>= idx-x 8))
+                                            (pin (+ start-y idx-y) ;; ~~~ GRAY
+                                                 (+ start-x idx-x)
+                                                 40 40 40) )))))))))))))))
       (with-open-file
           (output output-pathname
                   :element-type '(unsigned-byte 8)
