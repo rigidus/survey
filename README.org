@@ -1053,7 +1053,7 @@ How to make screenshot:
                         (progn ;; цвет другой, значит изменился внутри линии
                           (pin yy xx 255 255 0) ;; ~~~~~~~ YELLOW
                           (setf (aref packflag start-x) 0) ;; запишем в packflag
-                          ;; [BUG?] (setf yy (logior yy 7)) ;; skip в правый нижний угол
+                          ;; (setf yy (logior yy 7)) ;; skip в правый нижний угол [BUG?]
                           )
                         (progn  ;; else - цвет не менялся внутри линии
                           ;; дальше три варианта:
@@ -1070,29 +1070,50 @@ How to make screenshot:
                                 (pin yy xx 255 140 140) ;; ~~~~~~~ PINK
                                 ;; (и цвет гориз. не менялся)
                                 (if (is-packline-not-the-same-color)
-                                    (progn  ;; в packline другой цвет? -
+                                    (progn ;; в packline другой цвет? -
                                       (pin yy xx 255 255 255) ;; ~~~~~~~ WHITE
                                       (setf (aref packflag start-x) 0) ;; packflag=0
-                                      ;; (setf yy (logior yy 7)) ;; skip в правый нижний
+                                      ;; (setf yy (logior yy 7)) ;; skip в правый нижний [BUG?]
                                       )
                                     ;; else - цвет все тот же
                                     (progn
                                       (pin yy xx 90 90 255) ;; ~~~~~~~ SIREN
                                       (when (= 7 (logand yy 7)) ;; YY меняется в теле цикла,
                                         ;; поэтому важно вычислять на месте!
-                                        ;; последняя точка последней из 8 линий
                                         ;; Если мы здесь, то мы находимся в правом
                                         ;; нижнем углу и цвет всего квадрата тот же
                                         (pin yy xx 0 0 255) ;; ~~~~~~~ BLUE
-                                        (do* ((start-y (logand yy -8))
-                                              (idx-y 0 (+ 1 idx-y)))
-                                             ((>= idx-y 8))
-                                          (do* ((start-x (logand xx -8))
-                                                (idx-x 0 (+ 1 idx-x)))
-                                               ((>= idx-x 8))
-                                            (pin (+ start-y idx-y) ;; ~~~ GRAY
-                                                 (+ start-x idx-x)
-                                                 40 40 40) )))))))))))))))
+                                        ))))))))))))
+        (when (= 7 (logand yy 7)) ;; YY меняется в теле цикла,
+          ;; поэтому важно вычислять на месте!
+          (do* ((x8 0 (+ 8 x8)))
+               ((>= x8 width))
+            (if (= 1 (aref packflag x8))
+                (do* ((start-y (logand yy -8))
+                      (idx-y 0 (+ 1 idx-y)))
+                     ((>= idx-y 8))
+                  (do* ((start-x (logand x8 -8))
+                        (idx-x 0 (+ 1 idx-x)))
+                       ((>= idx-x 8))
+                    (pin (+ start-y idx-y) ;; ~~~ GRAY
+                         (+ start-x idx-x)
+                         60 20 20) ))
+                ;; else
+                (do* ((start-y (logand yy -8))
+                      (idx-y 0 (+ 1 idx-y)))
+                     ((>= idx-y 8))
+                  (do* ((start-x (logand x8 -8))
+                        (idx-x 0 (+ 1 idx-x)))
+                       ((>= idx-x 8))
+                    (dotimes (zz channels) ;; save to COLOR
+                      (setf (aref new (+ start-y idx-y) (+ start-x idx-x) zz)
+                            (aref old (+ start-y idx-y) (+ start-x idx-x) zz)))
+                    ;; (pin (+ start-y idx-y) ;; ~~~ GRAY
+                    ;;      (+ start-x idx-x)
+                    ;;      60 20 20)
+                    ))
+                )))
+        )
       (with-open-file
           (output output-pathname
                   :element-type '(unsigned-byte 8)
