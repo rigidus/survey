@@ -996,14 +996,6 @@ How to make screenshot:
        (setf (aref new ,yy ,xx 1) ,bb)
        (setf (aref new ,yy ,xx 2) ,cc)))
 
-  (defmacro is-packline-not-the-same-color ()
-    `(block not-the-same
-       (dotimes (zz channels)
-         (unless (= (aref packline start-x zz)
-                    (aref xx-color zz))
-           (return-from not-the-same T)))
-       nil))
-
   (defun copy-png (input-pathname output-pathname)
     (let* ((old (with-open-file
                     (input input-pathname :element-type '(unsigned-byte 8))
@@ -1013,79 +1005,79 @@ How to make screenshot:
            (channels   (png:image-channels old))
            (bit-depth  (png:image-bit-depth old))
            (new        (png:make-image height width channels bit-depth))
-           (start-x    0)
-           (start-y    0)
-           (packflag   (make-array `(,height ,width) :element-type 'fixnum))
-           (packline   (make-array `(,height ,width ,channels)
+           (packflag   (make-array `(,(ash height -3) ,(ash width -3))
+                                   :element-type 'fixnum))
+           (packline   (make-array `(,(ash height -3) ,(ash width -3) ,channels)
                                    :element-type '(unsigned-byte 8))))
       (print `(:width ,width :height ,height :channels
                       ,channels :bit-depth ,bit-depth))
-      (do* ((yy 0        (+ 1 yy))
-            (yy-8-p   0  (logand yy 7))
-            (start-y  0  (logand yy -8)))
-           ((>= yy height))
-        (do* ((xx       0  (+ 1 xx))
-              (xx-8-p   0  (logand xx 7))
-              (start-x  0  (logand xx -8)))
-             ((>= xx width))
+      (do* ((yy1      0  (+ 1 yy1))
+            (yy-8-p   0  (logand yy1 7))
+            (yy3      0  (ash yy1 -3)))
+           ((>= yy1 height))
+        (declare (type fixnum yy1) (type fixnum yy-8-p) (type fixnum yy3))
+        (do* ((xx1      0  (+ 1 xx1))
+              (xx-8-p   0  (logand xx1 7))
+              (xx3      0  (ash xx1 -3)))
+             ((>= xx1 width))
+          (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
           (block internal-loop
             (if (= 0 xx-8-p yy-8-p)
                 (progn ;; then - левый верхний угол квадрата
-                  (pin yy xx 0 255 0) ;; ~~~~~~~ GREEN
-                  (setf (aref packflag start-y start-x) 1) ;; set packflag
+                  (pin yy1 xx1 0 255 0) ;; ~~~~~~~ GREEN
+                  (setf (aref packflag yy3 xx3) 0) ;; set packflag
                   (dotimes (zz channels)           ;; save to packline
-                    (setf (aref packline start-y start-x zz)
-                          (aref old yy xx zz))))
+                    (setf (aref packline yy3 xx3 zz)
+                          (aref old yy1 xx1 zz))))
                 (progn ;; else - любая другая точка кроме верхнего левого угла
-                  (pin yy xx 0 70 0)  ;; ~~~~~~~ DARK-GREEN
+                  ;; (pin yy1 xx1 0 70 0)  ;; ~~~~~~~ DARK-GREEN
                   ;; (dotimes (zz channels) ;;~~~~~~~~~~~~~~[:::::::::::::]~~~~~~~~~
-                  ;;   (setf (aref new yy xx zz)
-                  ;;         (aref old yy xx zz)))
-                  (if (= 0 (aref packflag start-y start-x))
+                  ;;   (setf (aref new yy1 xx1 zz)
+                  ;;         (aref old yy1 xx1 zz)))
+                  (if (not (= 0 (aref packflag yy3 xx3)))
                       (progn
-                        (pin yy xx 0 0 70)  ;; ~~~~~~~ DARK-BLUE
+                        ;; (pin yy1 xx1 0 0 70)  ;; ~~~~~~~ DARK-BLUE
                         )
                       ;; else - если цвет ранее не менялся - проверяем щас
                       (dotimes (zz channels)
-                        (if (= (aref packline start-y start-x zz)
-                               (aref old yy xx zz))
+                        (if (= (aref packline yy3 xx3 zz)
+                               (aref old yy1 xx1 zz))
                             (progn
-                              (pin yy xx 70 0 0)  ;; ~~~~~~~ DARK-RED
+                              ;; (pin yy1 xx1 70 0 0)  ;; ~~~~~~~ DARK-RED
                               )
                             ;; else - любой канал не равен -> весь квадрат к черту
                             (progn
-                              (pin yy xx 157 157 0) ;; ~~~~~~~ DARK-YELLOW
-                              (setf (aref packflag start-y start-x) 0)
-                              ;; (setf xx (logior xx 7))
-                              ;; (setf yy (logior yy 7))
-                              (return-from internal-loop) ;; выход из internal-loop
-                              ))))
+                              ;; (pin yy1 xx1 157 157 0) ;; ~~~~~~~ DARK-YELLOW
+                              (setf (aref packflag yy3 xx3)
+                                    (+ (ash (logand yy1 7) 3)
+                                       (logand xx1 7)))))))
                   ;; Если мы здесь, то цвет не поменялся после проверки щас
                   )))))
-      (do* ((yy 0        (+ 1 yy))
-            (yy-8-p   0  (logand yy 7))
-            (start-y  0  (logand yy -8)))
-           ((>= yy height))
-        (do* ((xx       0  (+ 1 xx))
-              (xx-8-p   0  (logand xx 7))
-              (start-x  0  (logand xx -8)))
-             ((>= xx width))
-          (if (= 0 (aref packflag start-y start-x))
-              (progn
-                (dotimes (zz channels) ;; save to COLOR
-                  (setf (aref new yy xx zz)
-                        80))
-                ;; (dotimes (zz channels) ;;~~~~~~~~~~~~~~[:::::::::::::]~~~~~~~~~
-                ;;   (setf (aref new yy xx zz)
-                ;;         (logand 255 (- (+ (aref new yy xx zz) (aref old yy xx zz)) 50))))
-                )
-              ;; else
-              ;; (dotimes (zz channels) ;; save to COLOR
-              ;;   (setf (aref new yy xx zz)
-              ;;         (logand 255
-              ;;                 (+ (aref new start-y start-x zz)
-              ;;                    (aref packline start-y start-x zz)))))
-              )))
+      (do* ((yy1      0  (+ 1 yy1))
+            (yy-8-p   0  (logand yy1 7))
+            (yy3      0  (ash yy1 -3)))
+           ((>= yy1 height))
+        (do* ((xx1      0  (+ 1 xx1))
+              (xx-8-p   0  (logand xx1 7))
+              (xx3      0  (ash xx1 -3)))
+             ((>= xx1 width))
+          (let* ((packflag (aref packflag yy3 xx3))
+                 (yy4 (ash packflag -3))
+                 (xx4 (logand packflag 7)))
+            (unless (= 0 packflag) ;; partially block
+              (if (and (< yy1 (+ yy4 (logand yy1 -8)))
+                       (< xx3 (+ xx4 (logand xx1 -8))))
+                  (progn ;; filled part
+                    (dotimes (zz channels)
+                      (setf (aref new yy1 xx1 zz)
+                            (logior #b10000000
+                                    (aref packline yy3 xx3 zz)))))
+                  ;; else - rest part
+                  (dotimes (zz channels)
+                    (setf (aref new yy1 xx1 zz)
+                          (logand 255
+                                  (logior #b01111111 ;; we need only 1 bit for channel
+                                          (aref old yy1 xx1 zz))))))))))
       (with-open-file
           (output output-pathname
                   :element-type '(unsigned-byte 8)
@@ -1094,7 +1086,12 @@ How to make screenshot:
 
   (time
    (copy-png "x-snapshot-true-color.png" "aaaaa.png")
-  )
+   )
+
+
+  (time
+   (copy-png "tlg2.png" "tlg2tlg2tlg2.png")
+   )
 #+END_SRC
 
 * TODO TMP
