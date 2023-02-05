@@ -987,7 +987,17 @@ How to make screenshot:
 
 * Cutting
 
-#+BEGIN_SRC lisp
+Можно ли автоматически сгенерировать по этой картинке программу на форте, которая будет форкаться для того чтобы как можно быстрее воспроизвести в точности такое изображение?
+
+Имея на входе "точки затравки" и поток байт, который управляет в каком направлении будут расти серые участки?
+
+Я думаю о том чтобы включить в виртуальную форт-машину команды fork и exit
+
+И над алгоритмом, который оптимальным способом построит программу для построение картинки
+
+Еще я думаю о том, что при выполнении таких форкнутых программ мы фактически получаем ветвящееся дерево стеков, а вот входные данные - это единый поток команд для всех форкнутых кусков, просто они делают из него выборку команд каждый в своем слайсе, пока не наткнуться на exit
+
+#+BEGIN_SRC lisp :tangle tmp2.lisp
   (ql:quickload "png")
 
   (defmacro pin (yy xx aa bb cc)
@@ -996,21 +1006,30 @@ How to make screenshot:
        (setf (aref new ,yy ,xx 1) ,bb)
        (setf (aref new ,yy ,xx 2) ,cc)))
 
+  (declaim (inline copy-png))
+
+  (declaim (ftype (function (string string) fixnum)
+                  copy-png))
+
   (defun copy-png (input-pathname output-pathname)
+    (declare (optimize (speed 3))
+             (optimize (safety 0)))
     (let* ((old (with-open-file
                     (input input-pathname :element-type '(unsigned-byte 8))
                   (png:decode input)))
-           (width      (logand -8 (png:image-width old)))
-           (height     (logand -8 (png:image-height old)))
-           (channels   (png:image-channels old))
-           (bit-depth  (png:image-bit-depth old))
+           (width      (the fixnum (logand -8 (png:image-width old))))
+           (height     (the fixnum (logand -8 (png:image-height old))))
+           (channels   (the fixnum (png:image-channels old)))
+           (bit-depth  (the fixnum (png:image-bit-depth old)))
            (new        (png:make-image height width channels bit-depth))
            (packflag   (make-array `(,(ash height -3) ,(ash width -3))
                                    :element-type 'fixnum))
            (packline   (make-array `(,(ash height -3) ,(ash width -3) ,channels)
                                    :element-type '(unsigned-byte 8))))
-      (print `(:width ,width :height ,height :channels
-                      ,channels :bit-depth ,bit-depth))
+      (declare (type fixnum width)
+               (type fixnum height)
+               (type fixnum channels)
+               (type fixnum bit-depth))
       (do* ((yy1      0  (+ 1 yy1))
             (yy-8-p   0  (logand yy1 7))
             (yy3      0  (ash yy1 -3)))
@@ -1024,14 +1043,14 @@ How to make screenshot:
           (block internal-loop
             (if (= 0 xx-8-p yy-8-p)
                 (progn ;; then - левый верхний угол квадрата
-                  (pin yy1 xx1 0 255 0) ;; ~~~~~~~ GREEN
+                  ;; (pin yy1 xx1 0 255 0) ;; ~~~~~~~ GREEN
                   (setf (aref packflag yy3 xx3) 0) ;; set packflag
                   (dotimes (zz channels)           ;; save to packline
                     (setf (aref packline yy3 xx3 zz)
                           (aref old yy1 xx1 zz))))
                 (progn ;; else - любая другая точка кроме верхнего левого угла
                   ;; (pin yy1 xx1 0 70 0)  ;; ~~~~~~~ DARK-GREEN
-                  ;; (dotimes (zz channels) ;;~~~~~~~~~~~~~~[:::::::::::::]~~~~~~~~~
+                  ;; (dotimes (zz channels) ;;~~~~~~~~~~~~~~[:::::::::::::]~~~~~
                   ;;   (setf (aref new yy1 xx1 zz)
                   ;;         (aref old yy1 xx1 zz)))
                   (if (not (= 0 (aref packflag yy3 xx3)))
@@ -1057,41 +1076,115 @@ How to make screenshot:
             (yy-8-p   0  (logand yy1 7))
             (yy3      0  (ash yy1 -3)))
            ((>= yy1 height))
+        (declare (type fixnum yy1) (type fixnum yy-8-p) (type fixnum yy3))
         (do* ((xx1      0  (+ 1 xx1))
               (xx-8-p   0  (logand xx1 7))
               (xx3      0  (ash xx1 -3)))
              ((>= xx1 width))
+          (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
           (let* ((packflag (aref packflag yy3 xx3))
                  (yy4 (ash packflag -3))
                  (xx4 (logand packflag 7)))
-            (unless (= 0 packflag) ;; partially block
-              (if (and (< yy1 (+ yy4 (logand yy1 -8)))
-                       (< xx3 (+ xx4 (logand xx1 -8))))
-                  (progn ;; filled part
-                    (dotimes (zz channels)
-                      (setf (aref new yy1 xx1 zz)
-                            (logior #b10000000
-                                    (aref packline yy3 xx3 zz)))))
-                  ;; else - rest part
+
+
+
+            (let* ((packflag (aref packflag yy3 xx3))
+                   (yy4 (ash packflag -3))
+                   (xx4 (logand packflag 7)))
+              (unless (= 0 packflag) ;; partially block
+                ;; (if (and (< yy1 (+ yy4 (logand yy1 -8)))
+                ;;          (< xx3 (+ xx4 (logand xx1 -8))))
+                ;;     (progn ;; filled part
+                ;;       (dotimes (zz channels)
+                ;;         (setf (aref new yy1 xx1 zz)
+                ;;               (logior #b10000000
+                ;;                       (aref packline yy3 xx3 zz)))))
+                ;;     ;; else - rest part
+                ;;     (dotimes (zz channels)
+                ;;       (setf (aref new yy1 xx1 zz)
+                ;;             (logand 255
+                ;;                     ;; we need only 1 bit for channel
+                ;;                     (logior #b01111111
+                ;;                             (aref old yy1 xx1 zz))))))
+
+                ;; (if (and (< yy1 (+ yy4 (logand yy1 -8)))
+                ;;          (< xx3 (+ xx4 (logand xx1 -8))))
+                (progn ;; filled part
                   (dotimes (zz channels)
                     (setf (aref new yy1 xx1 zz)
-                          (logand 255
-                                  (logior #b01111111 ;; we need only 1 bit for channel
-                                          (aref old yy1 xx1 zz))))))))))
+                          (logior #b10000000
+                                  (aref packline yy3 xx3 zz)))))
+                ;; else - rest part
+                ;; (dotimes (zz channels)
+                ;;   (setf (aref new yy1 xx1 zz)
+                ;;         (logand 255
+                ;;                 ;; we need only 1 bit for channel
+                ;;                 (logior #b01111111
+                ;;                         (aref old yy1 xx1 zz)))))
+                )
+              ))))
       (with-open-file
           (output output-pathname
                   :element-type '(unsigned-byte 8)
                   :direction :output :if-exists :supersede)
-        (png:encode new output))))
+        (png:encode new output)))
+    1)
 
-  (time
-   (copy-png "x-snapshot-true-color.png" "aaaaa.png")
-   )
+  (copy-png "x-snapshot-true-color.png" "aaaaa.png")
 
+  (compile 'copy-png)
 
-  (time
-   (copy-png "tlg2.png" "tlg2tlg2tlg2.png")
-   )
+  (dotimes (aa 100)
+    (time
+     (copy-png "x-snapshot-true-color.png" "aaaaa.png")
+     ))
+
+  ;; (disassemble #'copy-png)
+
+  ;; (require :sb-sprof)
+
+  ;; (sb-sprof:profile-call-counts "CL-USER")
+
+  (sb-sprof:with-profiling (:max-samples 100
+                            :report :flat
+                            :mode :time
+                            :loop t)
+    (copy-png "x-snapshot-true-color.png" "aaaaa.png"))
+
+  ;; (sb-sprof:with-profiling (:max-samples 100
+  ;;                           :mode :alloc
+  ;;                           :report :flat)
+  ;;   (copy-png "x-snapshot-true-color.png" "aaaaa.png"))
+
+  (defun unpacker (old new width height channels bit-depth)
+    (let ((packflag (make-array `(,(ash height -3) ,(ash width -3))
+                                :element-type 'fixnum))
+          (packline (make-array `(,(ash height -3) ,(ash width -3) ,channels)
+                                :element-type '(unsigned-byte 8))))
+      (declare (type fixnum width)
+               (type fixnum height)
+               (type fixnum channels)
+               (type fixnum bit depth))
+      (do* ((yy1 0 (+ 1 yy1))
+            (yy-8-p 0 (logand yy1 7))
+            (yy3 0 (ash yy1 -3)))
+           ((>= yy1 height))
+        (declare (type fixnum yy1) (type fixnum yy-8-p) (type fixnum yy3))
+        (do* ((xx1 0 (+ 1 xx1))
+              (xx-8-p 0 (logand xx1 7))
+              (xx3 0 (ash xx1 -3)))
+             ((>= xx1 width))
+          (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
+          (if (= 0 xx-8-p yy-8-p)
+              (progn
+                (dotimes (zz channels)
+                  (setf (aref new yy1 xx1 zz)
+                        (aref old yy1 xx1 zz))))
+              (if (not (zerop (aref packflag yy3 xx3)))
+                  (dotimes (zz channels)
+                    (setf (aref new yy1 xx1 zz)
+                          (aref packline yy3 xx3 zz)))))
+          ))))
 #+END_SRC
 
 * TODO TMP
