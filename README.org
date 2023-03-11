@@ -1119,7 +1119,6 @@ How to make screenshot:
                                     (aref packline yy3 xx3 zz))))
                     )
                   ;; else - rest part
-                  ,#+packrest
                   (dotimes (zz channels)
                     (setf (aref new yy1 xx1 zz)
                           (logand 255
@@ -1160,35 +1159,7 @@ How to make screenshot:
   ;;                           :report :flat)
   ;;   (copy-png "x-snapshot-true-color.png" "aaaaa.png"))
 
-  (defun unpacker (old new width height channels bit-depth)
-    (let ((packflag (make-array `(,(ash height -3) ,(ash width -3))
-                                :element-type 'fixnum))
-          (packline (make-array `(,(ash height -3) ,(ash width -3) ,channels)
-                                :element-type '(unsigned-byte 8))))
-      (declare (type fixnum width)
-               (type fixnum height)
-               (type fixnum channels)
-               (type fixnum bit depth))
-      (do* ((yy1 0 (+ 1 yy1))
-            (yy-8-p 0 (logand yy1 7))
-            (yy3 0 (ash yy1 -3)))
-           ((>= yy1 height))
-        (declare (type fixnum yy1) (type fixnum yy-8-p) (type fixnum yy3))
-        (do* ((xx1 0 (+ 1 xx1))
-              (xx-8-p 0 (logand xx1 7))
-              (xx3 0 (ash xx1 -3)))
-             ((>= xx1 width))
-          (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
-          (if (= 0 xx-8-p yy-8-p)
-              (progn
-                (dotimes (zz channels)
-                  (setf (aref new yy1 xx1 zz)
-                        (aref old yy1 xx1 zz))))
-              (if (not (zerop (aref packflag yy3 xx3)))
-                  (dotimes (zz channels)
-                    (setf (aref new yy1 xx1 zz)
-                          (aref packline yy3 xx3 zz)))))
-          ))))
+
 #+END_SRC
 
 * Figures
