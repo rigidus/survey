@@ -982,7 +982,8 @@ How to make screenshot:
             ;; else - return image array
             (zpng:data-array image)))))
 
-  ;; (x-snapshot :path "x-snapshot-true-color.png")
+  (x-snapshot
+   :path "x-snapshot-true-color-telegram.png")
 #+END_SRC
 
 * Cutting
@@ -1011,6 +1012,12 @@ How to make screenshot:
   (declaim (ftype (function (string string) fixnum)
                   copy-png))
 
+
+  (setf *features*
+        (remove :packrest *features*))
+
+  (pushnew :packrest *features*)
+
   (defun copy-png (input-pathname output-pathname)
     (declare (optimize (speed 3))
              (optimize (safety 0)))
@@ -1026,25 +1033,25 @@ How to make screenshot:
                                    :element-type 'fixnum))
            (packline   (make-array `(,(ash height -3) ,(ash width -3) ,channels)
                                    :element-type '(unsigned-byte 8))))
-      (declare (type fixnum width)
-               (type fixnum height)
-               (type fixnum channels)
-               (type fixnum bit-depth))
+      ;; packflag - это массив флагов равных нулю, когда в квадрате 8*8 есть только один цвет
+      ;; packline - это массив этих цветов в обрабатываемой строке пикселей
+      (declare  (type fixnum width)     (type fixnum height)
+                (type fixnum channels)  (type fixnum bit-depth))
       (do* ((yy1      0  (+ 1 yy1))
-            (yy-8-p   0  (logand yy1 7))
-            (yy3      0  (ash yy1 -3)))
+            (yy-8-p   0  (logand yy1 7)) ;; true когда y-координата кратна 8
+            (yy3      0  (ash yy1 -3)))  ;; y-индекс в массиве packflag
            ((>= yy1 height))
         (declare (type fixnum yy1) (type fixnum yy-8-p) (type fixnum yy3))
         (do* ((xx1      0  (+ 1 xx1))
-              (xx-8-p   0  (logand xx1 7))
-              (xx3      0  (ash xx1 -3)))
+              (xx-8-p   0  (logand xx1 7)) ;; true когда x-координата кратна 8
+              (xx3      0  (ash xx1 -3)))  ;; x-индекс в массиве packflag
              ((>= xx1 width))
           (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
           (block internal-loop
             (if (= 0 xx-8-p yy-8-p)
-                (progn ;; then - левый верхний угол квадрата
+                (progn ;; then - левый верхний угол квадрата 8x8
                   ;; (pin yy1 xx1 0 255 0) ;; ~~~~~~~ GREEN
-                  (setf (aref packflag yy3 xx3) 0) ;; set packflag
+                  (setf (aref packflag yy3 xx3) 0) ;; set packflag = 0
                   (dotimes (zz channels)           ;; save to packline
                     (setf (aref packline yy3 xx3 zz)
                           (aref old yy1 xx1 zz))))
@@ -1054,24 +1061,34 @@ How to make screenshot:
                   ;;   (setf (aref new yy1 xx1 zz)
                   ;;         (aref old yy1 xx1 zz)))
                   (if (not (= 0 (aref packflag yy3 xx3)))
+                      ;; цвет в этом квадрате 8*8 уже менялся -
+                      ;; нет смысла проверять опять
                       (progn
                         ;; (pin yy1 xx1 0 0 70)  ;; ~~~~~~~ DARK-BLUE
                         )
-                      ;; else - если цвет ранее не менялся - проверяем щас
-                      (dotimes (zz channels)
-                        (if (= (aref packline yy3 xx3 zz)
-                               (aref old yy1 xx1 zz))
-                            (progn
-                              ;; (pin yy1 xx1 70 0 0)  ;; ~~~~~~~ DARK-RED
-                              )
-                            ;; else - любой канал не равен -> весь квадрат к черту
-                            (progn
-                              ;; (pin yy1 xx1 157 157 0) ;; ~~~~~~~ DARK-YELLOW
-                              (setf (aref packflag yy3 xx3)
-                                    (+ (ash (logand yy1 7) 3)
-                                       (logand xx1 7)))))))
-                  ;; Если мы здесь, то цвет не поменялся после проверки щас
-                  )))))
+                      ;; else - цвет ранее не менялся - имеет смысл проверить сейчас
+                      ;; отличается ли цвет текущего обрабатываемого пикселя от эталона
+                      (progn
+                        (dotimes (zz channels)
+                          (if (= (aref packline yy3 xx3 zz)
+                                 (aref old yy1 xx1 zz))
+                              (progn ;; в
+                                ;; (pin yy1 xx1 70 0 0)  ;; ~~~~~~~ DARK-RED
+                                )
+                              ;; else - любой канал не равен -> весь квадрат к черту
+                              (progn
+                                ;; (pin yy1 xx1 157 157 0) ;; ~~~~~~~ DARK-YELLOW
+                                (setf (aref packflag yy3 xx3)
+                                      (+ (ash (logand yy1 7) 3)
+                                         (logand xx1 7))))))
+                        ;; Если мы здесь, то цвет не поменялся после проверки текущего
+                        ;; пикселя - тут мы пока не делаем ничего
+                        (progn nil)
+                        ))))) ;; end of internal-loop
+          ) ;; end of do-cycle for x
+        )  ;; end of do-cycle for y
+      ;; Это отладочная часть, чтобы посмотреть на результаты компактификации
+      ;; Она восстанавливает информацию из packflag и packline
       (do* ((yy1      0  (+ 1 yy1))
             (yy-8-p   0  (logand yy1 7))
             (yy3      0  (ash yy1 -3)))
@@ -1085,43 +1102,30 @@ How to make screenshot:
           (let* ((packflag (aref packflag yy3 xx3))
                  (yy4 (ash packflag -3))
                  (xx4 (logand packflag 7)))
-
-
-
-            (let* ((packflag (aref packflag yy3 xx3))
-                   (yy4 (ash packflag -3))
-                   (xx4 (logand packflag 7)))
-              (unless (= 0 packflag) ;; partially block
-                ;; (if (and (< yy1 (+ yy4 (logand yy1 -8)))
-                ;;          (< xx3 (+ xx4 (logand xx1 -8))))
-                ;;     (progn ;; filled part
-                ;;       (dotimes (zz channels)
-                ;;         (setf (aref new yy1 xx1 zz)
-                ;;               (logior #b10000000
-                ;;                       (aref packline yy3 xx3 zz)))))
-                ;;     ;; else - rest part
-                ;;     (dotimes (zz channels)
-                ;;       (setf (aref new yy1 xx1 zz)
-                ;;             (logand 255
-                ;;                     ;; we need only 1 bit for channel
-                ;;                     (logior #b01111111
-                ;;                             (aref old yy1 xx1 zz))))))
-
-                ;; (if (and (< yy1 (+ yy4 (logand yy1 -8)))
-                ;;          (< xx3 (+ xx4 (logand xx1 -8))))
-                (progn ;; filled part
+            (unless (= 0 packflag) ;; partially block
+              #-packrest
+              (progn ;; filled part
+                (dotimes (zz channels)
+                  (setf (aref new yy1 xx1 zz)
+                        (logior #b10000000
+                                (aref packline yy3 xx3 zz)))))
+              ,#+packrest
+              (if (and (< yy1 (+ yy4 (logand yy1 -8)))
+                       (< xx3 (+ xx4 (logand xx1 -8))))
+                  (progn ;; filled part
+                    (dotimes (zz channels)
+                      (setf (aref new yy1 xx1 zz)
+                            (logior #b10000000
+                                    (aref packline yy3 xx3 zz))))
+                    )
+                  ;; else - rest part
+                  ,#+packrest
                   (dotimes (zz channels)
                     (setf (aref new yy1 xx1 zz)
-                          (logior #b10000000
-                                  (aref packline yy3 xx3 zz)))))
-                ;; else - rest part
-                ;; (dotimes (zz channels)
-                ;;   (setf (aref new yy1 xx1 zz)
-                ;;         (logand 255
-                ;;                 ;; we need only 1 bit for channel
-                ;;                 (logior #b01111111
-                ;;                         (aref old yy1 xx1 zz)))))
-                )
+                          (logand 255
+                                  ;; we need only 1 bit for channel
+                                  (logior #b01111111
+                                          (aref old yy1 xx1 zz))))))
               ))))
       (with-open-file
           (output output-pathname
@@ -1130,7 +1134,7 @@ How to make screenshot:
         (png:encode new output)))
     1)
 
-  (copy-png "x-snapshot-true-color.png" "aaaaa.png")
+  (copy-png "x-snapshot-true-color-telegram.png" "copy.png")
 
   (compile 'copy-png)
 
@@ -1186,6 +1190,69 @@ How to make screenshot:
                           (aref packline yy3 xx3 zz)))))
           ))))
 #+END_SRC
+
+* Figures
+
+У меня есть некоторая битовая матрица полученная из изображения текста. Там где были буквы - теперь битовые единицы, там где был фон - битовые нули.
+
+Я вижу, что битовые единицы в среднем образуют замкнутые фигуры, вытянутые в горизонтальном направлении. Они похожи на серию кирпичей в стене, как если бы кто-то пытался закрасить только те кирпичи, на которых были написаны слова. Где между слов были пробелы, там кирпичи остались незакрашенными.
+
+Я хочу построить алгоритм, который анализирует эту битовую матрицу и составляет минимальное по размеру описание этих фигур. Этого описания должно быть достаточно, чтобы воспроизвести фигуру по нему.
+
+Если для каждой фигуры передавать только те точки, которые ее ограничивают, тогда по этим точка границ, мы можем позже залить внутренность фигуры и таким образом воссоздать ее.
+
+При сканировании матрицы точек, когда мы встречаем единичный бит, это значит мы обнаружили край фигуры - это начальная точка. Теперь мы можем следовать вдоль ее границы, т.е. выбирать следующую точку так, чтобы нулевой бит был "с той же стороны" что и у предыдущей. У нас не такой большой выбор: по отношению к предыдущей посещенной точке новая точка может быть слева, справа, спереди или (если мы зашли в тупик) сзади. Для этих четырех вариантов нам нужно только два бита на шаг. Алгоритм может предпочитать всегда левый поворот, если он возможен. Тогда слева от текущей точки всегда будут нулевые биты, а справа единичные.
+
+Для выпуклой фигуры мы должны в конце концов дойти до начальной точки и считать, что фигура найдена. Если попытаться ее залить и сравнить с исходной матрицей, то в случае полного совпадения мы имеем выпуклую фигуру и внутри нее нет нулевых точек.
+
+На каждом шаге движения по границе алгоритм может выдавать в выходной поток два бита, которые определяют был ли поворот: "00" для движения в том же направлении, "11" для разворота и шага назад, "10" для поворота и шага налево, "01" для поворота и шага направо. По начальной координате и этому потоку бит можно восстановить всю фигуру.
+
+Так как фигуры в основном выпуклые и вытянутые по горизонтали, чаще всего будет происходить движение прямо и  соответствующая последовательность нулей может быть эффективно сжата впоследствии.
+
+Фигуры почти всегда были бы вытянутыми прямоугольниками, если бы не буквы, написание которых выдается за пределы строки вниз - "q p g", или вверх "d l".
+
+Если две строчки находятся одна под другой и в верхней строчке была буква с нижним подстрочным элементом, такая как "q" а в верхней строчке - с верхним надострочным элементом, такая как "d" - они могли соприкоснуться, и вместо двух раздельных прямоугольников мы получаем одну фигуру из двух прямоугольников но связанных перемычкой (или несколькими). Причем эти перемычки могут быть достаточно толстыми.
+
+Как их можно разделить?
+
+#+BEGIN_SRC lisp
+  (defun bitmap-parser (matrix start-point)
+    (let ((curr-point start-point)
+          (result-string ""))
+      ;; Go through each point in the matrix
+      (dolist (row matrix)
+        (dolist (point row)
+          ;; If the current point is 1
+          (if (= 1 point)
+              (let ((prev-point (previous-point matrix curr-point)))
+                ;; Generate a 2-bit string based on the relative positions
+                ;; of the current and previous points
+                (cond
+                  ((= curr-point prev-point)
+                   (setf result-string
+                         (concatenate 'string result-string "00")))
+                  ((adjacent-points-same-direction? curr-point prev-point)
+                   (setf result-string
+                         (concatenate 'string result-string "10")))
+                  (t (setf result-string
+                           (concatenate 'string result-string "01"))))
+                ;; Check for end of figure
+                (when (end-of-figure? matrix curr-point start-point)
+                  (return result-string))))
+          ;; Set current point to the next one
+          (setf curr-point (next-point matrix curr-point))))))
+
+  ;; Helper functions to find the next/previous point and check if two
+  ;; points are adjacent in a certain direction
+  (defun next-point (matrix coords) ...)
+  (defun previous-point (matrix coords) ...)
+  (defun adjacent-points-same-direction? (a b) ...)
+  (defun end-of-figure? (matrix curr-point start-point) ...)
+#+END_SRC
+
+* TODO Ideas
+
+Несколько серверов могут делать лонг-пуллинг для множества клиентов
 
 * TODO TMP
 
