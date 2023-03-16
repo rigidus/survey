@@ -1166,32 +1166,40 @@ How to make screenshot:
 
 #+BEGIN_SRC plantuml :file ./img/rc-edge-detector.png
   start
-    :save EntryPoint;
+    :set EntryPoint = CurPnt;
     :set: Direction = ToRight;
     !pragma useVerticalIf on
-    (M)
+    (A)
     if ((Fg == leftSide(CurPnt))?) then (yes)
       :set: Direction = rotateLeft(Direction);
-      (M)
-      detach;
-    else (no)
-      if ((Fg == forwardSide(CurPnt))?) then (yes)
-        :push(Stack, CurPnt);
-        :set: CurPnt = moveForward(CurPnt);
-        if ((curPnt == EntryPoint)?) then (yes)
-          :return Stack;
-          stop;
-        else (no)
-          (M)
-          detach;
-        endif;
-      else (no)
-        :set: Direction = rotateRight(Direction);
-        (M)
-        detach;
+      (F)
+      :push(Stack, CurPnt);
+      :set: CurPnt = moveForward(CurPnt);
+      if ((curPnt != EntryPoint)?) then (yes)
+        (A)
       endif;
+    else (no)
+      :set: RotateCnt = 0;
+      (R)
+      repeat
+        if ((Fg == forwardSide(CurPnt))?) then (yes)
+          (F)
+        else (no)
+          :set: Direction = rotateRight(Direction);
+          :set: RotateCnt++;
+        endif;
+      repeat while ((RotateCnt < 3)) is (yes goto (R))
     endif;
+    :return reverse(Stack);
+    stop;
 #+END_SRC
+
+
+
+
+
+
+
 
 #+BEGIN_SRC lisp
   (defun rotate-left (direction)
@@ -1249,61 +1257,89 @@ How to make screenshot:
     (let ((entry-point cur-pnt)        ;; сохраняем начальную точку
           (stack '())                  ;; создаем пустой стек
           (direction 'to-right))       ;; задаем начальное направление
-      (format t "direction: ~A ~%" direction)
-      (tagbody
-       move
-         (format t "cur-pnt: ~A : ~A ~%" cur-pnt (fg-p cur-pnt packflag height width))
-         (let ((left-side-crd (left-side cur-pnt direction height width)))
-           (format t "left-side-crd: ~A : ~A ~%"
-                   left-side-crd
-                   (fg-p left-side-crd packflag height width))
-           (if (fg-p left-side-crd packflag height width)
-               (progn ;; then fg == left-side
-                 (setf direction (rotate-left direction))
-                 (format t "direction: ~A ~%" direction)
-                 (go move))
-               (progn ;; else bg == left-side
-                 (let ((forward-side-crd (forward-side cur-pnt direction height width)))
-                   (format t "forward-side-crd: ~A : ~A ~%"
-                           forward-side-crd
-                           (fg-p forward-side-crd packflag height width))
-                   (if (fg-p forward-side-crd packflag height width)
-                       (progn ;; then fg == forward-side
-                         (push cur-pnt stack)
-                         (setf cur-pnt (forward-side cur-pnt direction height width))
-                         (if (equal cur-pnt entry-point)
-                             (progn
-                               (format t "finish ~%")
-                               (return-from edge-8x8 (reverse stack)))
-                             ;; else
-                             (go move)))
-                       (progn ;; else
-                         (setf direction (rotate-right direction))
-                         (format t "direction: ~A ~%" direction)
-                         (go move))))))))))
+      (labels ((f ()
+                 (push cur-pnt stack)
+                 (setf cur-pnt (forward-side cur-pnt direction height width))
+                 (not (equal cur-pnt entry-point))))
+        (format t "direction: ~A ~%" direction)
+        (tagbody
+         lab_A
+           ;; (read-line)
+           (format t ":: cur-pnt: ~A ~%" cur-pnt)
+           (let* ((left-crd (left-side cur-pnt direction height width))
+                  (left-val (fg-p left-crd packflag height width)))
+             (format t "left: ~A : ~A ~%" left-crd left-val)
+             (if left-val
+                 (progn ;; then fg == left-val
+                   (format t ":: left fg detected => rotate-left ~%")
+                   (setf direction (rotate-left direction))
+                   (format t "direction: ~A ~%" direction)
+                   (when (f)
+                     (go lab_A)))
+                 (progn ;; else bg == left-val
+                   (let ((rotate-cnt 0))
+                     (tagbody
+                      lab_R
+                        (format t "rotate-cnt: ~A ~%" rotate-cnt)
+                        (let* ((forward-crd (forward-side cur-pnt direction height width))
+                               (forward-val (fg-p forward-crd packflag height width)))
+                          (format t "forward: ~A : ~A ~%" forward-crd forward-val)
+                          (if forward-val
+                              (when (f)
+                                (go lab_A))
+                              (progn ;; else
+                                (format t "=>: rotate-right ~%")
+                                (setf direction (rotate-right direction))
+                                (format t "direction: ~A ~%" direction)
+                                (incf rotate-cnt)
+                                (when (< rotate-cnt 3)
+                                  (go lab_R)))))))))
+             (progn
+               (format t ":: finish: ~A ~%"
+                       (if (equal cur-pnt entry-point)
+                           "entry-point achived"
+                           "over rotation"))
+               (return-from edge-8x8 (reverse stack))))))))
 
-  ;; Test
-  (defun run-test-scenario ()
-    (let* ((packflag #2A((0 0 0 0 0 0 0 0 0 0)
-                         (0 0 0 0 0 0 0 0 0 0)
-                         (0 0 0 0 0 0 0 0 0 0)
-                         (0 0 0 0 0 0 0 0 0 0)
-                         (0 0 0 0 1 1 0 0 0 0)
-                         (0 0 0 0 1 1 0 0 0 0)
-                         (0 0 0 0 0 0 0 0 0 0)
-                         (0 0 0 0 0 0 0 0 0 0)
-                         (0 0 0 0 0 0 0 0 0 0)
-                         (0 0 0 0 0 0 0 0 0 0)))
-           (start-point (cons 4 4))
+  ;; Tests
+
+  (defun simple-test ()
+    (let* ((packflag #2A((0 0 0 0 )
+                         (0 1 1 0 )
+                         (0 1 1 0 )
+                         (0 0 0 0 )))
+           (start-point (cons 1 1))
            (height 10)
            (width 10)
-           (expected-result '((4 . 4) (4 . 5) (5 . 5) (5 . 4)))
+           (expected-result '((1 . 1) (1 . 2) (2 . 2) (2 . 1)))
            (result (edge-8x8 start-point height width packflag)))
     (if (equal result expected-result)
-        (format t ":: Test passed.")
-        (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
+        (format t "::= Test passed.")
+        (format t "::= Test failed. Expected: ~A, but got: ~A" expected-result result))))
 
-  (run-test-scenario)
+  ;; (simple-test)
+
+  (defun complex-test ()
+    (let* ((packflag #2A((0 0 0 0 0 0 0)
+                         (0 1 0 1 1 1 0)
+                         (0 1 1 1 0 1 0)
+                         (0 0 1 0 0 1 0)
+                         (0 0 1 0 1 1 0)
+                         (0 0 1 1 1 0 0)
+                         (0 0 0 1 1 0 0)
+                         (0 0 0 0 0 0 0)))
+           (start-point (cons 1 1))
+           (height 10)
+           (width 10)
+           (expected-result '((1 . 1) (2 . 1) (2 . 2) (2 . 3) (1 . 3) (1 . 4) (1 . 5)
+                              (2 . 5) (3 . 5) (4 . 5) (4 . 4) (5 . 4) (6 . 4) (6 . 3)
+                              (5 . 3) (5 . 2) (4 . 2) (3 . 2) (2 . 2) (2 . 1)))
+           (result (edge-8x8 start-point height width packflag)))
+      (if (equal result expected-result)
+          (format t ":: Test passed.")
+          (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
+
+  ;; (complex-test)
 #+END_SRC
 
 * Cutting
