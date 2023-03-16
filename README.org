@@ -1142,10 +1142,10 @@ How to make screenshot:
     (multiple-value-bind (packflag packline height width channels bit-depth)
         (conv-8x8 img)
       (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
-                              img
+                              ;; img
                               )))
         (with-open-file
-            (output "copy.png"
+            (output "copy1.png"
                     :element-type '(unsigned-byte 8)
                     :direction :output :if-exists :supersede)
           (png:encode new output)))))
@@ -1153,49 +1153,121 @@ How to make screenshot:
 
 * Edge detector
 
-Поиск краев в несколько стадий:
-- поиск точки входа (можно искать ее двигаясь сверху вниз по колонке пикселей где мы ожидаем увидеть строчку текста)
-  - найдя точку входа, нужно проверить не является ли она частью уже найденной фигуры
-- от точки входа мы обходим фигуру двигаясь вверх, влево, вниз, вправо, если это возможно (т.е. если мы можем двигаться по точкам которые не являются фоном
-  - при каждом продвижении мы:
-    - добавляем в стек каждую следующую точку. Т.е. на вершине стека у нас всегда текущий обрабатываемый пиксель
-    - обнаружив нового кандидата на добавление мы должны проверить что пиксель с такими координатами не присутствует уже стеке. Если это так - то контур замкнулся
+Поиск краев:
+
+- Выберем начальный параметр - точку внутри фигуры, края которой мы хотим найти. Ее цвет должен быть равен цвету тона (Fg) и сверху над ней должна быть точка фона (Bg). Запоминаем эту точку - ~EntryPnt~ и ее же записываем в текущую точку - ~CurPnt~.
+- Установим начальное направление движения "вправо" (ToRight). В дальнейшем направление движения будет меняться чтобы обходить фигуру по контуру в направлении по часовой стрелке.
+- Попытка подвижения вперед:
+  - Если слева по направлению движения есть точка с цветом тона (Fg), то мы должны повернуть направление влево и повторить попытку продвижения вперед.
+  - Иначе (слева находится точка фона - Bg):
+    - Если впереди по направлению движения есть точка с цветом тона (Fg), то мы можем продвинуться вперед. Продвигаясь вперед мы заталкиваем предыдущую точку в ~Stack~ и делаем следующую по направлению движения точку текущей - ~CurPnt~.
+      - После этого мы должны проверить, не совпадает ли новая текущая точка ~CurPnt~ с начальной точкой ~EntryPnt~ - если это так, то мы обошли фигуру и дошли до начальной точки и должны вернуть ~Stack~ и выйти. В противном случае мы пытаемся продвинуться на еще одну точку вперед по направлению движения.
+    - Иначе (впереди по направлению движения есть точка с цветом фона (Bg). Мы не можем продвинуться вперед, мы должны повернуть направление движения вправо и повторить попытку продвижения вперед.
 
 #+BEGIN_SRC plantuml :file ./img/rc-edge-detector.png
   start
-
-  :save entry_point;
-
-  repeat :save cur_pnt to stack;
-
-  label try_to_move;
-  repeat;
-
-  !pragma useVerticalIf on
-  if (can we move UP) then (yes)
-    :cur_pnt_y--;
-
-  elseif (can we move RIGHT) then (yes)
-    :cur_pnt_x--;
-  elseif (can we move DOWN) then (yes)
-    :cur_pnt_y++;
-  elseif (can we move LEFT) then (yes)
-    :cur_pnt_x++;
-  else (nothing)
-    repeat;
-      :TODO:BACKTRACK;
-    repeat while ();
-
-  endif
-
-  if (new cur_pnt is entry_point?) then (yes)
-    :return stack;
-    stop;
-  endif
-
-  repeat while ();
+    :save EntryPoint;
+    :set: Direction = ToRight;
+    !pragma useVerticalIf on
+    (M)
+    if ((Fg == leftSide(CurPnt))?) then (yes)
+      :set: Direction = rotateLeft(Direction);
+      (M)
+      detach;
+    else (no)
+      if ((Fg == forwardSide(CurPnt))?) then (yes)
+        :push(Stack, CurPnt);
+        :set: CurPnt = moveForward(CurPnt);
+        if ((curPnt == EntryPoint)?) then (yes)
+          :return Stack;
+          stop;
+        else (no)
+          (M)
+          detach;
+        endif;
+      else (no)
+        :set: Direction = rotateRight(Direction);
+        (M)
+        detach;
+      endif;
+    endif;
 #+END_SRC
 
+#+BEGIN_SRC lisp
+  (defun rotate-left (direction)
+    (cond ((equal 'to-right direction) 'to-up)
+          ((equal 'to-up direction) 'to-left)
+          ((equal 'to-left direction) 'to-down)
+          ((equal 'to-down direction) 'to-right)))
+
+  (defun rotate-right (direction)
+    (cond ((equal 'to-right direction) 'to-down)
+          ((equal 'to-up direction) 'to-right)
+          ((equal 'to-left direction) 'to-up)
+          ((equal 'to-down direction) 'to-left)))
+
+  ;; Y-координата идет в CUR-PNT первой
+  ;; -1 means to low
+  ;; -2 means to high
+  (defun forward-side (cur-pnt direction height width)
+    (destructuring-bind (yy . xx)
+        cur-pnt
+      (destructuring-bind (yyy . xxx)
+          (cond ((equal 'to-right direction)
+                 (cons yy (+ xx 1)))
+                ((equal 'to-up direction)
+                 (cons (- yy 1) xx))
+                ((equal 'to-left direction)
+                 (cons yy (- xx 1)))
+                ((equal 'to-down direction)
+                 (cons (+ yy 1) xx)))
+        (when (< yyy 0)
+          (setf yyy -1))
+        (when (< xxx 0)
+          (setf xxx -1))
+        (when (> yyy height)
+          (setf yyy -2))
+        (when (> xxx width)
+          (setf yyy -2))
+        (cons yyy xxx))))
+
+  ;; (forward-side-pnt-coords (cons 202 3) 'to-down 200 300)
+
+  (defun fg-p (cur-pnt packflag)
+    (destructuring-bind (yy . xx)
+        cur-pnt
+      (and (> yy 0)
+           (> xx 0)
+           (not (= 0 (aref packflag yy xx)))
+           t)))
+
+  (defun left-side (cur-pnt direction height width)
+    (forward-side cur-pnt (rotate-left direction) height width))
+
+  (defun edge-8x8 (cur-pnt height width packflag)
+    (let ((entry-point cur-pnt)        ;; сохраняем начальную точку
+          (stack '())                  ;; создаем пустой стек
+          (direction 'to-right))       ;; задаем начальное направление
+      (tagbody
+       move
+         (if (fg-p (left-side cur-pnt direction height width) packflag)
+             (progn ;; then fg == left-side
+               (setf direction (rotate-left direction))
+               (go move))
+             (progn ;; else bg == left-side
+               (if (fg-p (forward-side cur-pnt direction height width) packflag)
+                   (progn ;; then fg == forward-side
+                     (push cur-pnt stack)
+                     (setf cur-pnt (forward-side cur-pnt direction height width))
+                     (if (and (car cur-pnt) (car entry-point)
+                              (cdr cur-pnt) (cdr entry-point))
+                         (return-from edge-8x8 stack)
+                         ;; else
+                         (go move)))
+                   (progn ;; else
+                     (setf direction (rotate-right direction))
+                     (go move))))))))
+#+END_SRC
 
 * Cutting
 
