@@ -1195,16 +1195,20 @@ How to make screenshot:
 
 #+BEGIN_SRC lisp
   (defun rotate-left (direction)
-    (cond ((equal 'to-right direction) 'to-up)
-          ((equal 'to-up direction) 'to-left)
-          ((equal 'to-left direction) 'to-down)
-          ((equal 'to-down direction) 'to-right)))
+    (let ((ret (cond ((equal 'to-right direction) 'to-up)
+                     ((equal 'to-up direction) 'to-left)
+                     ((equal 'to-left direction) 'to-down)
+                     ((equal 'to-down direction) 'to-right))))
+      ;; (format t "rotate-left. direction: ~A ~%" ret)
+      ret))
 
   (defun rotate-right (direction)
-    (cond ((equal 'to-right direction) 'to-down)
-          ((equal 'to-up direction) 'to-right)
-          ((equal 'to-left direction) 'to-up)
-          ((equal 'to-down direction) 'to-left)))
+    (let ((ret (cond ((equal 'to-right direction) 'to-down)
+                     ((equal 'to-up direction) 'to-right)
+                     ((equal 'to-left direction) 'to-up)
+                     ((equal 'to-down direction) 'to-left))))
+      ;; (format t "rotate-rigth. direction: ~A ~%" ret)
+      ret))
 
   ;; Y-координата идет в CUR-PNT первой
   ;; -1 means to low
@@ -1229,7 +1233,7 @@ How to make screenshot:
 
   ;; (forward-side-pnt-coords (cons 202 3) 'to-down 200 300)
 
-  (defun fg-p (cur-pnt packflag)
+  (defun fg-p (cur-pnt packflag height width)
     (destructuring-bind (yy . xx)
         cur-pnt
       (and (>= yy 0)
@@ -1245,24 +1249,61 @@ How to make screenshot:
     (let ((entry-point cur-pnt)        ;; сохраняем начальную точку
           (stack '())                  ;; создаем пустой стек
           (direction 'to-right))       ;; задаем начальное направление
+      (format t "direction: ~A ~%" direction)
       (tagbody
        move
-         (if (fg-p (left-side cur-pnt direction height width) packflag)
-             (progn ;; then fg == left-side
-               (setf direction (rotate-left direction))
-               (go move))
-             (progn ;; else bg == left-side
-               (if (fg-p (forward-side cur-pnt direction height width) packflag)
-                   (progn ;; then fg == forward-side
-                     (push cur-pnt stack)
-                     (setf cur-pnt (forward-side cur-pnt direction height width))
-                     (if (equal cur-pnt entry-point)
-                         (return-from edge-8x8 stack)
-                         ;; else
-                         (go move)))
-                   (progn ;; else
-                     (setf direction (rotate-right direction))
-                     (go move))))))))
+         (format t "cur-pnt: ~A : ~A ~%" cur-pnt (fg-p cur-pnt packflag height width))
+         (let ((left-side-crd (left-side cur-pnt direction height width)))
+           (format t "left-side-crd: ~A : ~A ~%"
+                   left-side-crd
+                   (fg-p left-side-crd packflag height width))
+           (if (fg-p left-side-crd packflag height width)
+               (progn ;; then fg == left-side
+                 (setf direction (rotate-left direction))
+                 (format t "direction: ~A ~%" direction)
+                 (go move))
+               (progn ;; else bg == left-side
+                 (let ((forward-side-crd (forward-side cur-pnt direction height width)))
+                   (format t "forward-side-crd: ~A : ~A ~%"
+                           forward-side-crd
+                           (fg-p forward-side-crd packflag height width))
+                   (if (fg-p forward-side-crd packflag height width)
+                       (progn ;; then fg == forward-side
+                         (push cur-pnt stack)
+                         (setf cur-pnt (forward-side cur-pnt direction height width))
+                         (if (equal cur-pnt entry-point)
+                             (progn
+                               (format t "finish ~%")
+                               (return-from edge-8x8 (reverse stack)))
+                             ;; else
+                             (go move)))
+                       (progn ;; else
+                         (setf direction (rotate-right direction))
+                         (format t "direction: ~A ~%" direction)
+                         (go move))))))))))
+
+  ;; Test
+  (defun run-test-scenario ()
+    (let* ((packflag #2A((0 0 0 0 0 0 0 0 0 0)
+                         (0 0 0 0 0 0 0 0 0 0)
+                         (0 0 0 0 0 0 0 0 0 0)
+                         (0 0 0 0 0 0 0 0 0 0)
+                         (0 0 0 0 1 1 0 0 0 0)
+                         (0 0 0 0 1 1 0 0 0 0)
+                         (0 0 0 0 0 0 0 0 0 0)
+                         (0 0 0 0 0 0 0 0 0 0)
+                         (0 0 0 0 0 0 0 0 0 0)
+                         (0 0 0 0 0 0 0 0 0 0)))
+           (start-point (cons 4 4))
+           (height 10)
+           (width 10)
+           (expected-result '((4 . 4) (4 . 5) (5 . 5) (5 . 4)))
+           (result (edge-8x8 start-point height width packflag)))
+    (if (equal result expected-result)
+        (format t ":: Test passed.")
+        (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
+
+  (run-test-scenario)
 #+END_SRC
 
 * Cutting
