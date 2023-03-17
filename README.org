@@ -1194,29 +1194,20 @@ How to make screenshot:
     stop;
 #+END_SRC
 
-
-
-
-
-
-
+Implemenation
 
 #+BEGIN_SRC lisp
   (defun rotate-left (direction)
-    (let ((ret (cond ((equal 'to-right direction) 'to-up)
-                     ((equal 'to-up direction) 'to-left)
-                     ((equal 'to-left direction) 'to-down)
-                     ((equal 'to-down direction) 'to-right))))
-      ;; (format t "rotate-left. direction: ~A ~%" ret)
-      ret))
+    (cond ((equal 'to-right direction) 'to-up)
+          ((equal 'to-up direction) 'to-left)
+          ((equal 'to-left direction) 'to-down)
+          ((equal 'to-down direction) 'to-right)))
 
   (defun rotate-right (direction)
-    (let ((ret (cond ((equal 'to-right direction) 'to-down)
-                     ((equal 'to-up direction) 'to-right)
-                     ((equal 'to-left direction) 'to-up)
-                     ((equal 'to-down direction) 'to-left))))
-      ;; (format t "rotate-rigth. direction: ~A ~%" ret)
-      ret))
+    (cond ((equal 'to-right direction) 'to-down)
+          ((equal 'to-up direction) 'to-right)
+          ((equal 'to-left direction) 'to-up)
+          ((equal 'to-down direction) 'to-left)))
 
   ;; Y-координата идет в CUR-PNT первой
   ;; -1 means to low
@@ -1264,7 +1255,7 @@ How to make screenshot:
         (format t "direction: ~A ~%" direction)
         (tagbody
          lab_A
-           ;; (read-line)
+           (read-line)
            (format t ":: cur-pnt: ~A ~%" cur-pnt)
            (let* ((left-crd (left-side cur-pnt direction height width))
                   (left-val (fg-p left-crd packflag height width)))
@@ -1340,6 +1331,25 @@ How to make screenshot:
           (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
 
   ;; (complex-test)
+
+  (defun border-test ()
+    (let* ((packflag #2A((1 1 1 0)
+                         (0 1 1 1)
+                         (1 1 1 1)
+                         (1 1 1 0)
+                         (0 1 1 0)))
+           (start-point (cons 0 0))
+           (height 5)
+           (width 4)
+           (expected-result '((0 . 0) (0 . 1) (0 . 2) (1 . 2) (1 . 3) (2 . 3) (2 . 2)
+                              (3 . 2) (4 . 2) (4 . 1) (3 . 1) (3 . 0) (2 . 0) (2 . 1)
+                              (1 . 1) (0 . 1)))
+           (result (edge-8x8 start-point height width packflag)))
+      (if (equal result expected-result)
+          (format t ":: Test passed.")
+          (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
+
+  (border-test)
 #+END_SRC
 
 * Cutting
