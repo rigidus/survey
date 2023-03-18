@@ -1400,21 +1400,21 @@ Implemenation
         (multiple-value-bind (packflag candidates)
             (start-fig-candidates-8x8 packflag pf-height pf-width)
           ;; Печатаем все точки-кандидаты
-          (format t "~% len candidates : ~A" (length candidates))
-          (print candidates)
+          ;; (format t "~% len candidates : ~A" (length candidates))
+          ;; (print candidates)
           ;; Итерируемся по точкам-кандидатам
           (block candidates-loop
             (loop for candidate in candidates :do
               ;; Получаем кайму
               (let ((cur-edge (edge-8x8 candidate pf-height pf-width packflag)))
                 ;; Печатаем кайму
-                (format t "~% len cur-edge : ~A" (length cur-edge))
-                (print cur-edge)
+                ;; (format t "~% len cur-edge : ~A" (length cur-edge))
+                ;; (print cur-edge)
                 ;; Удаляем из кандидатов точки, которые часть каймы
                 ;; Здесь есть риск что мы удалим текущую точку, но
                 ;; так как дальше она не используется - это окей
                 (loop for (yy . xx) in cur-edge do
-                  (setf candidates
+                  (setf candidates ;; delete really faster them remove
                         (delete (cons yy xx) candidates :test #'equal))
                   ;; Показываем точки каймы
                   (setf (aref packflag yy xx) -999)
@@ -1424,8 +1424,8 @@ Implemenation
               ;; (return-from candidates-loop nil)
                   ))
           ;; Печатаем все точки-кандидаты после удаления
-          (format t "~% len candidates : ~A" (length candidates))
-          (print candidates)
+          ;; (format t "~% len candidates : ~A" (length candidates))
+          ;; (print candidates)
           ;; Показываем все точки-кандидаты на картинке
           (loop for candidate in candidates :do
             (destructuring-bind (yy . xx)
