@@ -1105,13 +1105,22 @@ How to make screenshot:
             (unless (= 0 packflag) ;; partially block
               (if (null old)
                   (progn ;; filled part
-                    (dotimes (zz channels)
-                      (setf (aref new yy1 xx1 zz)
-                            127
-                            ;; (logior #b10000000
-                                    ;; (aref packline yy3 xx3 zz)
-                                    ;; )
-                            )))
+                    (if (> 0 packflag) ;; negative
+                        (dotimes (zz channels)
+                          (setf (aref new yy1 xx1 zz)
+                                200
+                                ;; (logior #b10000000
+                                ;; (aref packline yy3 xx3 zz)
+                                ;; )
+                                ))
+                        ;; else
+                        (dotimes (zz channels)
+                          (setf (aref new yy1 xx1 zz)
+                                100
+                                ;; (logior #b10000000
+                                ;; (aref packline yy3 xx3 zz)
+                                ;; )
+                                ))))
                   ;; else
                   (if (and (< yy1 (+ yy4 (logand yy1 -8)))
                            (< xx3 (+ xx4 (logand xx1 -8))))
@@ -1131,7 +1140,6 @@ How to make screenshot:
                                       (logior #b01111111
                                               (aref old yy1 xx1 zz)))))))))))
       new))
-
 
   ;; launcher
   (let* ((img
@@ -1351,6 +1359,59 @@ Implemenation
 
   (border-test)
 #+END_SRC
+
+* Figures searching
+
+Чтобы найти все потенциальные точки, откуда может начинаться замкнутая фигура мы идем вниз по вертикальной оси и ищем переход с пустой 8x8 точки в ~packflag~ на непустую. Каждая такая непустая точка, выше который находится пустая - это потенциальный кандидат на начало фигуры.
+
+Если мы перепишем значение на обратное - мы сможем визуализировать это более светлым оттенком серого в функции re-conv-8x8.
+
+#+BEGIN_SRC lisp
+  (defun start-fig-candidates-8x8 (packflag height width)
+    (let ((height (ash height -3))
+          (width  (ash width  -3))
+          (ret-candidates))
+      (do* ((xx      0  (+ 1 xx)))
+           ((>= xx width))
+        (let ((prev 0))
+          (do* ((yy      0  (+ 1 yy)))
+               ((>= yy height))
+            (let ((flag (aref packflag yy xx)))
+              (if (= 0 flag)
+                  (progn
+                    (setf prev 0))
+                  ;; else
+                  (when (= 0 prev)
+                    (push (cons yy xx) ret-candidates)
+                    (setf prev flag)))))))
+      (values packflag ret-candidates)))
+
+  ;; launcher
+  (let* ((img
+           (with-open-file
+               ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
+               (input "antalya.png" :element-type '(unsigned-byte 8))
+             (png:decode input))))
+    (multiple-value-bind (packflag packline height width channels bit-depth)
+        (conv-8x8 img)
+      ;; get figure start candidates
+      (multiple-value-bind (packflag candidates)
+          (start-fig-candidates-8x8 packflag height width)
+        (loop for candidate in candidates :do
+          (destructuring-bind (yy . xx)
+              candidate
+            ;; negative value need for showing in re-conv-8x8
+            (setf (aref packflag yy xx) (- 0 (aref packflag yy xx)))))
+        (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
+                                ;; img
+                                )))
+          (with-open-file
+              (output "copy1.png"
+                      :element-type '(unsigned-byte 8)
+                      :direction :output :if-exists :supersede)
+            (png:encode new output))))))
+#+END_SRC
+
 
 * Cutting
 
