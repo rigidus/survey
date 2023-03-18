@@ -1260,44 +1260,44 @@ Implemenation
                  (push cur-pnt stack)
                  (setf cur-pnt (forward-side cur-pnt direction height width))
                  (not (equal cur-pnt entry-point))))
-        (format t "direction: ~A ~%" direction)
+        ;; (format t "direction: ~A ~%" direction)
         (tagbody
          lab_A
-           (read-line)
-           (format t ":: cur-pnt: ~A ~%" cur-pnt)
+           ;; (read-line)
+           ;; (format t ":: cur-pnt: ~A ~%" cur-pnt)
            (let* ((left-crd (left-side cur-pnt direction height width))
                   (left-val (fg-p left-crd packflag height width)))
-             (format t "left: ~A : ~A ~%" left-crd left-val)
+             ;; (format t "left: ~A : ~A ~%" left-crd left-val)
              (if left-val
                  (progn ;; then fg == left-val
-                   (format t ":: left fg detected => rotate-left ~%")
+                   ;; (format t ":: left fg detected => rotate-left ~%")
                    (setf direction (rotate-left direction))
-                   (format t "direction: ~A ~%" direction)
+                   ;; (format t "direction: ~A ~%" direction)
                    (when (f)
                      (go lab_A)))
                  (progn ;; else bg == left-val
                    (let ((rotate-cnt 0))
                      (tagbody
                       lab_R
-                        (format t "rotate-cnt: ~A ~%" rotate-cnt)
+                        ;; (format t "rotate-cnt: ~A ~%" rotate-cnt)
                         (let* ((forward-crd (forward-side cur-pnt direction height width))
                                (forward-val (fg-p forward-crd packflag height width)))
-                          (format t "forward: ~A : ~A ~%" forward-crd forward-val)
+                          ;; (format t "forward: ~A : ~A ~%" forward-crd forward-val)
                           (if forward-val
                               (when (f)
                                 (go lab_A))
                               (progn ;; else
-                                (format t "=>: rotate-right ~%")
+                                ;; (format t "=>: rotate-right ~%")
                                 (setf direction (rotate-right direction))
-                                (format t "direction: ~A ~%" direction)
+                                ;; (format t "direction: ~A ~%" direction)
                                 (incf rotate-cnt)
                                 (when (< rotate-cnt 3)
                                   (go lab_R)))))))))
              (progn
-               (format t ":: finish: ~A ~%"
-                       (if (equal cur-pnt entry-point)
-                           "entry-point achived"
-                           "over rotation"))
+               ;; (format t ":: finish: ~A ~%"
+                       ;; (if (equal cur-pnt entry-point)
+                           ;; "entry-point achived"
+                           ;; "over rotation"))
                (return-from edge-8x8 (reverse stack))))))))
 
   ;; Tests
@@ -1366,11 +1366,11 @@ Implemenation
 
 Если мы перепишем значение на обратное - мы сможем визуализировать это более светлым оттенком серого в функции re-conv-8x8.
 
+Найдя потенциальные точки мы можем в цикле использовать их для поиска фигур функцией ~edge-8x8~. При этом мы каждый раз будем получать набор точек по краю фигуры. Если точки из этого набора присутствуют в списке потенциальных точек, то их нужно оттуда удалить, так как точки ограничивающие одну фигуру не могут быть частью другой.
+
 #+BEGIN_SRC lisp
   (defun start-fig-candidates-8x8 (packflag height width)
-    (let ((height (ash height -3))
-          (width  (ash width  -3))
-          (ret-candidates))
+    (let ((ret-candidates))
       (do* ((xx      0  (+ 1 xx)))
            ((>= xx width))
         (let ((prev 0))
@@ -1395,21 +1395,63 @@ Implemenation
     (multiple-value-bind (packflag packline height width channels bit-depth)
         (conv-8x8 img)
       ;; get figure start candidates
-      (multiple-value-bind (packflag candidates)
-          (start-fig-candidates-8x8 packflag height width)
-        (loop for candidate in candidates :do
-          (destructuring-bind (yy . xx)
-              candidate
-            ;; negative value need for showing in re-conv-8x8
-            (setf (aref packflag yy xx) (- 0 (aref packflag yy xx)))))
-        (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
-                                ;; img
-                                )))
-          (with-open-file
-              (output "copy1.png"
-                      :element-type '(unsigned-byte 8)
-                      :direction :output :if-exists :supersede)
-            (png:encode new output))))))
+      (let ((pf-height (ash height -3))
+            (pf-width  (ash width  -3)))
+        (multiple-value-bind (packflag candidates)
+            (start-fig-candidates-8x8 packflag pf-height pf-width)
+          ;; Печатаем все точки-кандидаты
+          (format t "~% len candidates : ~A" (length candidates))
+          (print candidates)
+          ;; Итерируемся по точкам-кандидатам
+          (block candidates-loop
+            (loop for candidate in candidates :do
+              ;; Получаем кайму
+              (let ((cur-edge (edge-8x8 candidate pf-height pf-width packflag)))
+                ;; Печатаем кайму
+                (format t "~% len cur-edge : ~A" (length cur-edge))
+                (print cur-edge)
+                ;; Удаляем из кандидатов точки, которые часть каймы
+                ;; Здесь есть риск что мы удалим текущую точку, но
+                ;; так как дальше она не используется - это окей
+                (loop for (yy . xx) in cur-edge do
+                  (setf candidates
+                        (delete (cons yy xx) candidates :test #'equal))
+                  ;; Показываем точки каймы
+                  (setf (aref packflag yy xx) -999)
+                      )
+                )
+              ;; Досрочно выходим из цикла по кандидатам
+              ;; (return-from candidates-loop nil)
+                  ))
+          ;; Печатаем все точки-кандидаты после удаления
+          (format t "~% len candidates : ~A" (length candidates))
+          (print candidates)
+          ;; Показываем все точки-кандидаты на картинке
+          (loop for candidate in candidates :do
+            (destructuring-bind (yy . xx)
+                candidate
+              (setf (aref packflag yy xx)
+                    (- 0 (aref packflag yy xx)))))
+          ;; Выводим картинку
+          (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
+                                  ;; img
+                                  )))
+            (with-open-file
+                (output "copy3.png"
+                        :element-type '(unsigned-byte 8)
+                        :direction :output :if-exists :supersede)
+              (png:encode new output)))))))
+
+
+  (defun iterate-and-remove (lst)
+    (loop for x in lst do
+      (format t "Iterating over element: ~A~%" x)
+      (delete-if #'oddp lst))
+    lst)
+
+  (iterate-and-remove '(1 2 3 4 5 6 7 8))
+
+  (delete-if #'oddp '(1 2 3 4 5 6 7 8))
 #+END_SRC
 
 
