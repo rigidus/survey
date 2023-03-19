@@ -1406,10 +1406,10 @@ Implemenation
                          (push cur-edge edges)
                          ;; Удаляем из кандидатов точки, которые часть каймы
                          (loop for edge-pnt in cur-edge do
-                           (setf candidates ;; delete really faster them remove
+                           (setf rest-of-candidates ;; delete really faster them remove
                                  (delete edge-pnt rest-of-candidates :test #'equal)))
                          ;; Хвостовая рекурсия
-                         (rec-elim (cdr candidates))))))
+                         (rec-elim rest-of-candidates)))))
           ;; Ищем точки-кандидаты с которых начинаются фигуры
           (multiple-value-bind (packflag candidates)
               (start-fig-candidates-8x8 packflag pf-height pf-width)
@@ -1441,7 +1441,6 @@ Implemenation
                             :direction :output :if-exists :supersede)
                   (png:encode new output)))))))))
 #+END_SRC
-
 
 * Cutting
 
@@ -3946,7 +3945,7 @@ https://github.com/jadatkins/hOCR-visualiser
 1. Rename your .hocr file to .html.
 
 2. Add the following lines to the <head> tag:
-	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+	<script src=""></script>
 	<script src="https://cdn.rawgit.com/jadatkins/hOCR-visualiser/8e34bb12/visualise-hocr.js"></script>
 	<link rel="stylesheet" type="text/css" href="https://cdn.rawgit.com/jadatkins/hOCR-visualiser/8e34bb12/visualise-hocr.css">
 
