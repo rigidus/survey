@@ -1387,71 +1387,63 @@ Implemenation
       (values packflag ret-candidates)))
 
   ;; launcher
-  (let* ((img
-           (with-open-file
-               ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
-               (input "antalya.png" :element-type '(unsigned-byte 8))
-             (png:decode input))))
+  (let ((img
+          (with-open-file
+              (input "antalya.png" :element-type '(unsigned-byte 8))
+            (png:decode input))))
     (multiple-value-bind (packflag packline height width channels bit-depth)
         (conv-8x8 img)
-      ;; get figure start candidates
       (let ((pf-height (ash height -3))
-            (pf-width  (ash width  -3)))
-        (multiple-value-bind (packflag candidates)
-            (start-fig-candidates-8x8 packflag pf-height pf-width)
-          ;; Печатаем все точки-кандидаты
-          ;; (format t "~% len candidates : ~A" (length candidates))
-          ;; (print candidates)
-          ;; Итерируемся по точкам-кандидатам
-          (block candidates-loop
-            (loop for candidate in candidates :do
-              ;; Получаем кайму
-              (let ((cur-edge (edge-8x8 candidate pf-height pf-width packflag)))
-                ;; Печатаем кайму
-                ;; (format t "~% len cur-edge : ~A" (length cur-edge))
-                ;; (print cur-edge)
-                ;; Удаляем из кандидатов точки, которые часть каймы
-                ;; Здесь есть риск что мы удалим текущую точку, но
-                ;; так как дальше она не используется - это окей
-                (loop for (yy . xx) in cur-edge do
-                  (setf candidates ;; delete really faster them remove
-                        (delete (cons yy xx) candidates :test #'equal))
-                  ;; Показываем точки каймы
-                  (setf (aref packflag yy xx) -999)
-                      )
-                )
-              ;; Досрочно выходим из цикла по кандидатам
-              ;; (return-from candidates-loop nil)
-                  ))
-          ;; Печатаем все точки-кандидаты после удаления
-          ;; (format t "~% len candidates : ~A" (length candidates))
-          ;; (print candidates)
-          ;; Показываем все точки-кандидаты на картинке
-          (loop for candidate in candidates :do
-            (destructuring-bind (yy . xx)
-                candidate
-              (setf (aref packflag yy xx)
-                    (- 0 (aref packflag yy xx)))))
-          ;; Выводим картинку
-          (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
-                                  ;; img
-                                  )))
-            (with-open-file
-                (output "copy3.png"
-                        :element-type '(unsigned-byte 8)
-                        :direction :output :if-exists :supersede)
-              (png:encode new output)))))))
-
-
-  (defun iterate-and-remove (lst)
-    (loop for x in lst do
-      (format t "Iterating over element: ~A~%" x)
-      (delete-if #'oddp lst))
-    lst)
-
-  (iterate-and-remove '(1 2 3 4 5 6 7 8))
-
-  (delete-if #'oddp '(1 2 3 4 5 6 7 8))
+            (pf-width  (ash width  -3))
+            (edges)) ;; края фигур
+        (labels ((rec-elim (candidates)
+                   (if (null candidates)
+                       (values)
+                       ;; else
+                       (let* ((candidate (car candidates))
+                              (rest-of-candidates (cdr candidates))
+                              (cur-edge (edge-8x8 candidate pf-height pf-width packflag)))
+                         (push cur-edge edges)
+                         ;; Печатаем кайму
+                         ;; (format t "~% len cur-edge : ~A" (length cur-edge))
+                         ;; (print cur-edge)
+                         ;; Удаляем из кандидатов точки, которые часть каймы
+                         (loop for edge-pnt in cur-edge do
+                           (setf candidates ;; delete really faster them remove
+                                 (delete edge-pnt rest-of-candidates :test #'equal)))
+                         ;; Хвостовая рекурсия
+                         (rec-elim (cdr candidates))))))
+          ;; Ищем точки-кандидаты с которых начинаются фигуры
+          (multiple-value-bind (packflag candidates)
+              (start-fig-candidates-8x8 packflag pf-height pf-width)
+            ;; Печатаем все точки-кандидаты
+            ;; (format t "~% len candidates : ~A" (length candidates))
+            ;; (print candidates)
+            ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
+            ;; оставшихся кандидатов тех, что совпадают с найденными краями
+            (rec-elim candidates)))
+        ;; Выводим картинку
+        ;; (format t "~% len edges : ~A" (length edges))
+        ;; (print edges)
+        (let ((dir (ensure-directories-exist
+                    (format nil "./~A/" (symbol-name (gensym))))))
+          (loop for edge in (remove-if #'(lambda (edg) (> 4 (length edg))) edges) do
+            (let ((packflag2 packflag)
+                  (filename (symbol-name (gensym))))
+              ;; (read-line)
+              (format t "~%~A" filename)
+              (print edge)
+              (loop for (yy . xx) in edge do
+                (setf (aref packflag yy xx) -999))
+              ;; (setf (aref packflag2 yy xx) -999)
+              (let ((new (re-conv-8x8 packflag2 packline height width channels bit-depth
+                                      ;; img
+                                      )))
+                (with-open-file
+                    (output (format nil "~A/~A.png" dir filename)
+                            :element-type '(unsigned-byte 8)
+                            :direction :output :if-exists :supersede)
+                  (png:encode new output)))))))))
 #+END_SRC
 
 
