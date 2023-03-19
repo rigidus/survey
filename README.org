@@ -1404,9 +1404,6 @@ Implemenation
                               (rest-of-candidates (cdr candidates))
                               (cur-edge (edge-8x8 candidate pf-height pf-width packflag)))
                          (push cur-edge edges)
-                         ;; Печатаем кайму
-                         ;; (format t "~% len cur-edge : ~A" (length cur-edge))
-                         ;; (print cur-edge)
                          ;; Удаляем из кандидатов точки, которые часть каймы
                          (loop for edge-pnt in cur-edge do
                            (setf candidates ;; delete really faster them remove
@@ -1416,27 +1413,23 @@ Implemenation
           ;; Ищем точки-кандидаты с которых начинаются фигуры
           (multiple-value-bind (packflag candidates)
               (start-fig-candidates-8x8 packflag pf-height pf-width)
-            ;; Печатаем все точки-кандидаты
-            ;; (format t "~% len candidates : ~A" (length candidates))
-            ;; (print candidates)
             ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
             ;; оставшихся кандидатов тех, что совпадают с найденными краями
             (rec-elim candidates)))
         ;; Выводим картинку
         ;; (format t "~% len edges : ~A" (length edges))
         ;; (print edges)
-        (let ((dir (ensure-directories-exist
-                    (format nil "./~A/" (symbol-name (gensym))))))
+        (let ((dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
           (loop for edge in (remove-if #'(lambda (edg) (> 4 (length edg))) edges) do
-            (let ((packflag2 packflag)
-                  (filename (symbol-name (gensym))))
-              ;; (read-line)
+            (let ((filename (symbol-name (gensym))))
+              ;; dbgout edge
               (format t "~%~A" filename)
               (print edge)
+              ;; show edge in pic
               (loop for (yy . xx) in edge do
                 (setf (aref packflag yy xx) -999))
-              ;; (setf (aref packflag2 yy xx) -999)
-              (let ((new (re-conv-8x8 packflag2 packline height width channels bit-depth
+              ;; save pic
+              (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
                                       ;; img
                                       )))
                 (with-open-file
