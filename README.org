@@ -1420,7 +1420,10 @@ Implemenation
         ;; (format t "~% len edges : ~A" (length edges))
         ;; (print edges)
         (let ((dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
-          (loop for edge in (remove-if #'(lambda (edg) (> 4 (length edg))) edges) do
+          (loop for edge in (remove-duplicates
+                             (remove-if #'(lambda (edg) (> 4 (length edg)))
+                                        edges))
+                do
             (let ((filename (symbol-name (gensym))))
               ;; dbgout edge
               (format t "~%~A" filename)
@@ -3936,3 +3939,15 @@ The rest of the logic of the work will be encapsulated in the correct order of r
   (sb-posix:get-pid)
   ,*/1 * * * * export DISPLAY=:0 && cd ~/quicklisp/ && flock -xn ./srv.lock sbcl --load ./srv.lisp > ./log.txt
 #+END_SRC
+
+* Ideas
+** hOCR-visualiser
+https://github.com/jadatkins/hOCR-visualiser
+1. Rename your .hocr file to .html.
+
+2. Add the following lines to the <head> tag:
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+	<script src="https://cdn.rawgit.com/jadatkins/hOCR-visualiser/8e34bb12/visualise-hocr.js"></script>
+	<link rel="stylesheet" type="text/css" href="https://cdn.rawgit.com/jadatkins/hOCR-visualiser/8e34bb12/visualise-hocr.css">
+
+3. View in a browser.

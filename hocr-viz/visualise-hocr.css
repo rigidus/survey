@@ -1,0 +1,60 @@
+body {
+    margin: 0;
+}
+
+[class*="ocr_"], [class*="ocrx_"] {
+    display: block;
+    position: fixed;
+    box-sizing: border-box;
+    border: 1px gray solid;
+    margin: 0;
+}
+.ocr_page {
+    position: static;
+    transform: translate(0, 0);
+    height: 20000px;
+}
+
+.ocr_page       { border-color: rgba(  0,   0,   0, 0.8); }
+.ocr_column     { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_carea      { border-color: rgba(255, 221,   0, 0.75); }
+.ocr_line       { border-color: rgba(255,   0,   0, 0.5); }
+.ocr_separator  { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_noise      { border-color: rgba(  0,   0,   0, 0.5); }
+
+.ocr_float      { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_textfloat,
+.ocr_textimage  { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_image,
+.ocr_linedrawing,
+.ocr_photo      { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_header,
+.ocr_footer     { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_pageno     { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_table      { border-color: rgba(  0,   0,   0, 0.5); }
+
+.ocr_document   { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_title,
+.ocr_author,
+.ocr_abstract   { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_part,
+.ocr_chapter    { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_section,
+.ocr_subsection,
+.ocr_subsubsection { border-color: rgba(0,  0,   0, 0.5); }
+.ocr_display,
+.ocr_blockquote,
+.ocr_par        { border-color: rgba(  0, 238,  34, 0.5); border-style: dashed; }
+.ocr_linear     { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_caption    { border-color: rgba(  0,   0,   0, 0.5); }
+
+.ocr_glyph,
+.ocr_glyphs     { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_dropcap    { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_math,
+.ocr_chem       { border-color: rgba(  0,   0,   0, 0.5); }
+.ocr_info       { border-color: rgba(  0,   0,   0, 0.5); }
+
+.ocrx_block     { border-color: rgba(  0,   0,   0, 0.5); }
+.ocrx_line      { border-color: rgba(  0,   0,   0, 0.5); }
+.ocrx_word      { border-color: rgba(  0,   0, 255, 0.5); }

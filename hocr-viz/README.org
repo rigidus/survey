@@ -1,0 +1,14 @@
+* hOCR-visualiser
+
+https://github.com/jadatkins/hOCR-visualiser
+1. Rename your .hocr file to .html.
+
+2. Add the following lines to the <head> tag:
+
+#+BEGIN_SRC html
+  <script src=""></script>
+  <script src="https://cdn.rawgit.com/jadatkins/hOCR-visualiser/8e34bb12/visualise-hocr.js"></script>
+  <link rel="stylesheet" type="text/css" href="https://cdn.rawgit.com/jadatkins/hOCR-visualiser/8e34bb12/visualise-hocr.css">
+#+END_SRC
+
+3. View in a browser.
