@@ -1106,13 +1106,23 @@ How to make screenshot:
               (if (null old)
                   (progn ;; filled part
                     (if (> 0 packflag) ;; negative
-                        (dotimes (zz channels)
-                          (setf (aref new yy1 xx1 zz)
-                                200
-                                ;; (logior #b10000000
-                                ;; (aref packline yy3 xx3 zz)
-                                ;; )
-                                ))
+                        (if (= -999 packflag)
+                            ;; (dotimes (zz channels)
+                            ;;   (setf (aref new yy1 xx1 zz)
+                            ;;         200
+                            ;;         ;; (logior #b10000000
+                            ;;         ;; (aref packline yy3 xx3 zz)
+                            ;;         ;; )
+                            ;;         ))
+                            (progn
+                              (setf (aref new yy1 xx1 0) 255)
+                              (setf (aref new yy1 xx1 1) 0)
+                              (setf (aref new yy1 xx1 2) 0))
+                            ;; else
+                            (progn
+                              (setf (aref new yy1 xx1 0) 0)
+                              (setf (aref new yy1 xx1 1) 255)
+                              (setf (aref new yy1 xx1 2) 0)))
                         ;; else
                         (dotimes (zz channels)
                           (setf (aref new yy1 xx1 zz)
@@ -1165,7 +1175,7 @@ How to make screenshot:
 
 - Выберем начальный параметр - точку внутри фигуры, края которой мы хотим найти. Ее цвет должен быть равен цвету тона (Fg) и сверху над ней должна быть точка фона (Bg). Запоминаем эту точку - ~EntryPnt~ и ее же записываем в текущую точку - ~CurPnt~.
 - Установим начальное направление движения "вправо" (ToRight). В дальнейшем направление движения будет меняться чтобы обходить фигуру по контуру в направлении по часовой стрелке.
-- Попытка подвижения вперед:
+- Попытка продвижения вперед:
   - Если слева по направлению движения есть точка с цветом тона (Fg), то мы должны повернуть направление влево и повторить попытку продвижения вперед.
   - Иначе (слева находится точка фона - Bg):
     - Если впереди по направлению движения есть точка с цветом тона (Fg), то мы можем продвинуться вперед. Продвигаясь вперед мы заталкиваем предыдущую точку в ~Stack~ и делаем следующую по направлению движения точку текущей - ~CurPnt~.
@@ -1369,6 +1379,8 @@ Implemenation
 Найдя потенциальные точки мы можем в цикле использовать их для поиска фигур функцией ~edge-8x8~. При этом мы каждый раз будем получать набор точек по краю фигуры. Если точки из этого набора присутствуют в списке потенциальных точек, то их нужно оттуда удалить, так как точки ограничивающие одну фигуру не могут быть частью другой.
 
 #+BEGIN_SRC lisp
+  (ql:quickload "alexandria")
+
   (defun start-fig-candidates-8x8 (packflag height width)
     (let ((ret-candidates))
       (do* ((xx      0  (+ 1 xx)))
@@ -1384,62 +1396,109 @@ Implemenation
                   (when (= 0 prev)
                     (push (cons yy xx) ret-candidates)
                     (setf prev flag)))))))
-      (values packflag ret-candidates)))
+      (reverse ret-candidates)))
 
-  ;; launcher
-  (let ((img
-          (with-open-file
-              (input "antalya.png" :element-type '(unsigned-byte 8))
-            (png:decode input))))
+  (defun arrays-equal-p (arr1 arr2 height width)
+    "untested"
+    (declare (optimize (speed 3))
+             (optimize (safety 0)))
+    (do* ((yy      0  (+ 1 yy)))
+         ((>= yy height))
+      (declare (type fixnum yy))
+      (do* ((xx      0  (+ 1 xx)))
+           ((>= xx width))
+        (declare (type fixnum xx))
+        (unless (equal (aref arr1 yy xx)
+                       (aref arr2 yy xx))
+          (return-from arrays-equal-p nil))))
+    t)
+
+  ;; launchers
+  (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
+               (png:decode input)))
+        (dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
     (multiple-value-bind (packflag packline height width channels bit-depth)
         (conv-8x8 img)
       (let ((pf-height (ash height -3))
             (pf-width  (ash width  -3))
             (edges)) ;; края фигур
         (labels ((rec-elim (candidates)
+                   ;; Ищем edges
                    (if (null candidates)
                        (values)
                        ;; else
                        (let* ((candidate (car candidates))
                               (rest-of-candidates (cdr candidates))
-                              (cur-edge (edge-8x8 candidate pf-height pf-width packflag)))
+                              (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
+                              (filename  (symbol-name (gensym)))
+                              (packflag2 (alexandria:copy-array packflag)))
+                         ;; dbgout: rest-of-candidates
+                         ;; (format t "~% len rest-of-candidates : ~A ~%"
+                         ;;         (length rest-of-candidates))
+                         ;; (print rest-of-candidates)
+                         ;; dbgout: cur-edge
+                         ;; (format t "~% len cur-edge : ~A ~%" (length cur-edge))
+                         ;; (print cur-edge)
+                         ;; show edge in pic
+                         (loop for (yy . xx) in cur-edge do
+                           (setf (aref packflag2 yy xx) -999))
+                         ;; Сохраняем кайму
                          (push cur-edge edges)
+                         ;; [TODO:gmm] - Тут должна быть заливка найденной фигуры
+                         ;; чтобы потом можно было удалить всех кандидатов
+                         ;; не только на кайме, но и внутри фигуры. А раз есть
+                         ;; заливка, то можно и распознать.
                          ;; Удаляем из кандидатов точки, которые часть каймы
                          (loop for edge-pnt in cur-edge do
                            (setf rest-of-candidates ;; delete really faster them remove
                                  (delete edge-pnt rest-of-candidates :test #'equal)))
+                         ;; show candidates in pic
+                         (loop for (yy . xx) in rest-of-candidates do
+                           (setf (aref packflag2 yy xx) -1000))
+                         ;; save pic
+                         (let ((new (re-conv-8x8 packflag2 packline height width
+                                                 channels bit-depth
+                                                 ;; img
+                                                 )))
+                           (with-open-file
+                               (output (format nil "~A/~A.png" dir filename)
+                                       :element-type '(unsigned-byte 8)
+                                       :direction :output :if-exists :supersede)
+                             (png:encode new output)))
                          ;; Хвостовая рекурсия
+                         ;; (print (length rest-of-candidates))
                          (rec-elim rest-of-candidates)))))
-          ;; Ищем точки-кандидаты с которых начинаются фигуры
-          (multiple-value-bind (packflag candidates)
-              (start-fig-candidates-8x8 packflag pf-height pf-width)
-            ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
-            ;; оставшихся кандидатов тех, что совпадают с найденными краями
-            (rec-elim candidates)))
-        ;; Выводим картинку
-        ;; (format t "~% len edges : ~A" (length edges))
-        ;; (print edges)
-        (let ((dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
-          (loop for edge in (remove-duplicates
-                             (remove-if #'(lambda (edg) (> 4 (length edg)))
-                                        edges))
-                do
-            (let ((filename (symbol-name (gensym))))
-              ;; dbgout edge
-              (format t "~%~A" filename)
-              (print edge)
-              ;; show edge in pic
-              (loop for (yy . xx) in edge do
-                (setf (aref packflag yy xx) -999))
-              ;; save pic
-              (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
-                                      ;; img
-                                      )))
-                (with-open-file
-                    (output (format nil "~A/~A.png" dir filename)
-                            :element-type '(unsigned-byte 8)
-                            :direction :output :if-exists :supersede)
-                  (png:encode new output)))))))))
+          ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
+          ;; оставшихся кандидатов тех, что совпадают с найденными краями
+          ;; пока кандидатов не останется. На выходе - edges
+          (rec-elim (start-fig-candidates-8x8 packflag pf-height pf-width)))
+        ;; Убираем слишком мелкие фигуры
+        (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
+                                                  edges)))
+        ;; dbgout: Количество фигур
+        (format t "~% len edges : ~A ~%" (length edges))
+        ;; Выводим картинки
+        ;; (loop for edge in edges do
+        ;;   (let ((filename  (symbol-name (gensym)))
+        ;;         (packflag2 (alexandria:copy-array packflag)))
+        ;;     ;; dbgout edge
+        ;;     (format t "~%~A" filename)
+        ;;     (print edge)
+        ;;     ;; show edge in pic
+        ;;     (loop for (yy . xx) in edge do
+        ;;       (setf (aref packflag2 yy xx) -999))
+        ;;     ;; test packflag2 differ packflag
+        ;;     ;; ...TODO...
+        ;;     ;; save pic
+        ;;     (let ((new (re-conv-8x8 packflag2 packline height width channels bit-depth
+        ;;                             ;; img
+        ;;                             )))
+        ;;       (with-open-file
+        ;;           (output (format nil "~A/~A.png" dir filename)
+        ;;                   :element-type '(unsigned-byte 8)
+        ;;                   :direction :output :if-exists :supersede)
+        ;;         (png:encode new output)))))
+        )))
 #+END_SRC
 
 * Cutting
