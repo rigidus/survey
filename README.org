@@ -994,6 +994,7 @@ How to make screenshot:
 
 Чтобы алгоритм был cache-friendly мы проходим массив пикселей строка за строкой обновляя массивы ~packflag~ и ~packline~. Каждый элемент массива ~packflag~ содержит 0 если цвет не менялся. Если же цвет менялся - то этот элемент содержит число от 1 до 64, которое представляет собой относительный порядковый номер пикселя в квадрате 8*8, где было обнаружено изменение цвета. Элементы массива ~packline~, содержащат цвет всего квадрата 8*8, если цвет не менялся или цвет тех первых точек квадрата до изменения цвета, если считать от левого верхнего угла квадрата.
 
+#+NAME: conv_8x8
 #+BEGIN_SRC lisp
   (ql:quickload "png")
 
@@ -1152,21 +1153,21 @@ How to make screenshot:
       new))
 
   ;; launcher
-  (let* ((img
-           (with-open-file
-               ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
-               (input "antalya.png" :element-type '(unsigned-byte 8))
-             (png:decode input))))
-    (multiple-value-bind (packflag packline height width channels bit-depth)
-        (conv-8x8 img)
-      (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
-                              ;; img
-                              )))
-        (with-open-file
-            (output "copy1.png"
-                    :element-type '(unsigned-byte 8)
-                    :direction :output :if-exists :supersede)
-          (png:encode new output)))))
+  ;; (let* ((img
+  ;;          (with-open-file
+  ;;              ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
+  ;;              (input "antalya.png" :element-type '(unsigned-byte 8))
+  ;;            (png:decode input))))
+  ;;   (multiple-value-bind (packflag packline height width channels bit-depth)
+  ;;       (conv-8x8 img)
+  ;;     (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
+  ;;                             ;; img
+  ;;                             )))
+  ;;       (with-open-file
+  ;;           (output "copy1.png"
+  ;;                   :element-type '(unsigned-byte 8)
+  ;;                   :direction :output :if-exists :supersede)
+  ;;         (png:encode new output)))))
 #+END_SRC
 
 * Edge detector
@@ -1214,6 +1215,7 @@ How to make screenshot:
 
 Implemenation
 
+#+NAME: edge_8x8
 #+BEGIN_SRC lisp
   (defun rotate-left (direction)
     (cond ((equal 'to-right direction) 'to-up)
@@ -1385,6 +1387,7 @@ Implemenation
 3. Анализируется строка ниже закрашиваемой в пределах от Х-left до Х-right и в ней находятся крайние правые пиксели всех незакрашенных фрагментов. Их координаты заносятся в стек.
 4. То же самое проделывается для строки выше закрашиваемой.
 
+#+NAME: fill_8x8
 #+BEGIN_SRC lisp
   (defun fill-8x8 (cur-pnt height width packflag fill-color &optional ret-flag)
     "undebugged"
@@ -1608,6 +1611,7 @@ Implemenation
 
 Найдя потенциальные точки мы можем в цикле использовать их для поиска фигур функцией ~edge-8x8~. При этом мы каждый раз будем получать набор точек по краю фигуры. Если точки из этого набора присутствуют в списке потенциальных точек, то их нужно оттуда удалить, так как точки ограничивающие одну фигуру не могут быть частью другой.
 
+#+NAME: launchers
 #+BEGIN_SRC lisp
   (ql:quickload "alexandria")
 
@@ -1631,7 +1635,95 @@ Implemenation
                     (setf prev flag)))))))
       (reverse ret-candidates)))
 
-  ;; launchers
+  ;; edges launcher
+
+  ;; (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
+  ;;              (png:decode input)))
+  ;;       (dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
+  ;;   (multiple-value-bind (packflag packline height width channels bit-depth)
+  ;;       (conv-8x8 img)
+  ;;     (let ((pf-height (ash height -3))
+  ;;           (pf-width  (ash width  -3))
+  ;;           (edges)) ;; края фигур
+  ;;       (labels ((rec-elim (candidates)
+  ;;                  ;; Ищем edges
+  ;;                  (if (null candidates)
+  ;;                      (values)
+  ;;                      ;; else
+  ;;                      (let* ((candidate (car candidates))
+  ;;                             (rest-of-candidates (cdr candidates))
+  ;;                             (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
+  ;;                             (filename  (symbol-name (gensym)))
+  ;;                             (packflag2 (alexandria:copy-array packflag)))
+  ;;                        ;; dbgout: rest-of-candidates
+  ;;                        ;; (format t "~% len rest-of-candidates : ~A ~%"
+  ;;                        ;;         (length rest-of-candidates))
+  ;;                        ;; (print rest-of-candidates)
+  ;;                        ;; dbgout: cur-edge
+  ;;                        ;; (format t "~% len cur-edge : ~A ~%" (length cur-edge))
+  ;;                        ;; (print cur-edge)
+  ;;                        ;; show edge in pic
+  ;;                        (loop for (yy . xx) in cur-edge do
+  ;;                          (setf (aref packflag2 yy xx) -999))
+  ;;                        ;; Сохраняем кайму
+  ;;                        (push cur-edge edges)
+  ;;                        ;; [TODO:gmm] - Заливка
+  ;;                        ;; ...
+  ;;                        ;; Удаляем из кандидатов точки, которые часть каймы
+  ;;                        (loop for edge-pnt in cur-edge do
+  ;;                          (setf rest-of-candidates ;; delete really faster them remove
+  ;;                                (delete edge-pnt rest-of-candidates :test #'equal)))
+  ;;                        ;; show candidates in pic
+  ;;                        (loop for (yy . xx) in rest-of-candidates do
+  ;;                          (setf (aref packflag2 yy xx) -1000))
+  ;;                        ;; save pic
+  ;;                        (let ((new (re-conv-8x8 packflag2 packline height width
+  ;;                                                channels bit-depth
+  ;;                                                ;; img
+  ;;                                                )))
+  ;;                          (with-open-file
+  ;;                              (output (format nil "~A/~A.png" dir filename)
+  ;;                                      :element-type '(unsigned-byte 8)
+  ;;                                      :direction :output :if-exists :supersede)
+  ;;                            (png:encode new output)))
+  ;;                        ;; Хвостовая рекурсия
+  ;;                        ;; (print (length rest-of-candidates))
+  ;;                        (rec-elim rest-of-candidates)))))
+  ;;         ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
+  ;;         ;; оставшихся кандидатов тех, что совпадают с найденными краями
+  ;;         ;; пока кандидатов не останется. На выходе - edges
+  ;;         (rec-elim (start-fig-candidates-8x8 packflag pf-height pf-width)))
+  ;;       ;; Убираем слишком мелкие фигуры
+  ;;       ;; (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
+  ;;       ;;                                           edges)))
+  ;;       ;; dbgout: Количество фигур
+  ;;       (format t "~% len edges : ~A ~%" (length edges))
+  ;;       ;; Выводим картинки
+  ;;       ;; (loop for edge in edges do
+  ;;       ;;   (let ((filename  (symbol-name (gensym)))
+  ;;       ;;         (packflag2 (alexandria:copy-array packflag)))
+  ;;       ;;     ;; dbgout edge
+  ;;       ;;     (format t "~%~A" filename)
+  ;;       ;;     (print edge)
+  ;;       ;;     ;; show edge in pic
+  ;;       ;;     (loop for (yy . xx) in edge do
+  ;;       ;;       (setf (aref packflag2 yy xx) -999))
+  ;;       ;;     ;; test packflag2 differ packflag
+  ;;       ;;     ;; ...TODO...
+  ;;       ;;     ;; save pic
+  ;;       ;;     (let ((new (re-conv-8x8 packflag2 packline height width channels bit-depth
+  ;;       ;;                             ;; img
+  ;;       ;;                             )))
+  ;;       ;;       (with-open-file
+  ;;       ;;           (output (format nil "~A/~A.png" dir filename)
+  ;;       ;;                   :element-type '(unsigned-byte 8)
+  ;;       ;;                   :direction :output :if-exists :supersede)
+  ;;       ;;         (png:encode new output)))))
+  ;;       )))
+
+
+  ;; fill launcher
+
   (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
                (png:decode input)))
         (dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
@@ -1647,7 +1739,15 @@ Implemenation
                        ;; else
                        (let* ((candidate (car candidates))
                               (rest-of-candidates (cdr candidates))
-                              (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
+                              (cur-edge ;;
+                                (edge-8x8 candidate pf-height pf-width packflag)
+                                ;; (multiple-value-bind (result points)
+                                ;;     (fill-8x8 candidate pf-height pf-width
+                                ;;               (alexandria:copy-array packflag)
+                                ;;               -999 t)
+                                ;;   (print points)
+                                ;;   points)
+                                )
                               (filename  (symbol-name (gensym)))
                               (packflag2 (alexandria:copy-array packflag)))
                          ;; dbgout: rest-of-candidates
@@ -1716,6 +1816,8 @@ Implemenation
         ;;         (png:encode new output)))))
         )))
 #+END_SRC
+
+** Reference fill
 
 http://algolist.ru/graphics/fill.php
 
@@ -2039,6 +2141,19 @@ http://algolist.ru/graphics/fill.php
   }
 
 #+END_SRC
+
+* Dbg assembly
+
+#+BEGIN_SRC lisp :tangle ./run.lisp :noweb yes :exports code
+  <<conv_8x8>>
+
+  <<edge_8x8>>
+
+  <<fill_8x8>>
+
+  <<launchers>>
+#+END_SRC
+
 * TODO Cutting
 
 Можно ли автоматически сгенерировать по этой картинке программу на форте, которая будет форкаться для того чтобы как можно быстрее воспроизвести в точности такое изображение?
@@ -2051,7 +2166,7 @@ http://algolist.ru/graphics/fill.php
 
 Еще я думаю о том, что при выполнении таких форкнутых программ мы фактически получаем ветвящееся дерево стеков, а вот входные данные - это единый поток команд для всех форкнутых кусков, просто они делают из него выборку команд каждый в своем слайсе, пока не наткнуться на exit
 
-#+BEGIN_SRC lisp :tangle tmp2.lisp
+#+BEGIN_SRC lisp
   ;; DBG & PROFILING
 
   (copy-png "x-snapshot-true-color-telegram.png" "copy.png")
