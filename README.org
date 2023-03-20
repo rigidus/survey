@@ -1382,6 +1382,9 @@ Implemenation
   (ql:quickload "alexandria")
 
   (defun start-fig-candidates-8x8 (packflag height width)
+    "Поиск затравок сверху вниз. Затравка - это точка с
+     цветом тона (1) которая находится ниже точки с цветом
+     фона (0)"
     (let ((ret-candidates))
       (do* ((xx      0  (+ 1 xx)))
            ((>= xx width))
@@ -1447,7 +1450,21 @@ Implemenation
                          ;; [TODO:gmm] - Тут должна быть заливка найденной фигуры
                          ;; чтобы потом можно было удалить всех кандидатов
                          ;; не только на кайме, но и внутри фигуры. А раз есть
-                         ;; заливка, то можно и распознать.
+                         ;; заливка, то можно и сразу распознать залитое.
+                         ;; Заливка:
+                         ;;   Поместим первую точку в стек
+                         ;;   Далее, до исчерпания стека:
+                         ;;     - Извлечь затравку из стека
+                         ;;     - Закрасить максимальное кол-во пикселей
+                         ;;       влево и вправо от затравки, пока не попадется
+                         ;;       граничный пиксель. Пусть это X-left и X-right
+                         ;;     - Анализируется строка ниже закрашиваемой
+                         ;;       в пределах от X-left и X-right и в ней находятся
+                         ;;       крайние правые пиксели всех незакрашенных
+                         ;;       фрагментов. Их координаты заносятся в стек
+                         ;;     - То же самое проделывается для строки выше
+                         ;;       закрашиваемой
+                         ;;   двигаемся слева-направо
                          ;; Удаляем из кандидатов точки, которые часть каймы
                          (loop for edge-pnt in cur-edge do
                            (setf rest-of-candidates ;; delete really faster them remove
@@ -1473,8 +1490,8 @@ Implemenation
           ;; пока кандидатов не останется. На выходе - edges
           (rec-elim (start-fig-candidates-8x8 packflag pf-height pf-width)))
         ;; Убираем слишком мелкие фигуры
-        (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
-                                                  edges)))
+        ;; (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
+        ;;                                           edges)))
         ;; dbgout: Количество фигур
         (format t "~% len edges : ~A ~%" (length edges))
         ;; Выводим картинки
@@ -1501,6 +1518,327 @@ Implemenation
         )))
 #+END_SRC
 
+
+#+BEGIN_SRC c
+  /*----------------------------------------------------- V_FAST
+   ,* Подпрограммы заливки области с затравкой
+   ,* построчным алгоритмом:
+   ,*
+   ,* Pop_Stk   - Локальная подпрограмма. Извлекает координаты
+   ,*             пиксела из стека в глобальные скаляры xtek,ytek
+   ,*
+   ,* Push_Stk  - Локальная подпрограмма. Заносит координаты
+   ,*             пиксела в стек
+   ,*
+   ,* Get_Video - Локальная подпрограмма. Читает строку из
+   ,*             видеопамяти в глобальный буфер строки.
+   ,*
+   ,* Put_Video - Локальная подпрограмма. Копирует байты из
+   ,*             глобального буфера строки в видеопамять.
+   ,*
+   ,* Search    - Локальная подпрограмма. Ищет затравочные
+   ,*             пикселы в строке видеопамяти, находящейся
+   ,*             в глобальном массиве.
+   ,*
+   ,* V_FAST    - Собственно подпрограмма построчной заливки
+   ,*             гранично-определенной области
+   ,*
+   ,* V_FA_SET  - Устанавливает количественные ограничения
+   ,*            для заливки
+   ,*/
+
+  #include <alloc.h>
+  #include <graphics.h>
+  #include <stdio.h>
+
+  #define MAX_GOR 2048  /* Разрешение дисплея по X */
+  #define MAX_VER 2048  /* Разрешение дисплея по Y */
+  #define MAX_STK 8192  /* Размер стека координат заливки */
+
+  static int gor_max= MAX_GOR;
+  static int ver_max= MAX_VER;
+  static int stk_max= MAX_STK;
+  static int *pi_stk, *pn_stk;   /* Указ  стека заливки */
+  static int xtek, ytek;         /* Координаты из стека */
+  static char *pc_video;         /* Указ на буфер строки */
+  static int stklen;             /* Достигнутая глубина стека*/
+                                 /* только для отладочных    */
+                                 /* измерений программы      */
+
+
+  /*---------------------------------------------------- Pop_Stk
+   ,* Извлекает координаты пиксела из стека в xtek, ytek
+   ,* Возвращает 0/1 - нет/есть ошибки
+   ,*/
+  static int  Pop_Stk ()
+  {  register int  otw;
+      otw= 0;
+      if (pi_stk <= pn_stk) ++otw; else {
+          ytek= *--pi_stk;  xtek= *--pi_stk;
+      }
+      return (otw);
+  }  /* Pop_Stk */
+
+  /*--------------------------------------------------- Push_Stk
+   ,* Заносит координаты пиксела в стек
+   ,* Возвращает -1/0 - нет места под стек/норма
+   ,*/
+  static int  Push_Stk (x, y)
+      register int x, y;
+  {
+      register int glu;
+      if ((glu= pi_stk - pn_stk) >= stk_max) x= -1; else {
+          ,*pi_stk++= x;  *pi_stk++= y; x= 0;
+          if (glu > stklen) stklen= glu;
+      }
+      return (x);
+  }  /* Push_Stk */
+
+  /*-------------------------------------------------- Get_Video
+   ,* В байтовый буфер строки, заданный глобальным
+   ,* указателем pc_video,
+   ,* читает из видеопамяти пикселы y-строки от xbg до xen
+   ,* Возвращает 0/1 - нет/есть ошибки
+   ,*/
+  static int  Get_Video (y, pcxbg, pcxen)
+  int y;  register char *pcxbg, *pcxen;
+  {  register int x;
+
+      if (y>=0 && y<ver_max && pcxbg<=pcxen) {
+          x= pcxbg - pc_video;
+          do *pcxbg++= getpixel (x++, y); while (pcxbg <= pcxen);
+          y= 0;
+      } else y= 1;
+      return (y);
+  }  /* Get_Video */
+
+  /*-------------------------------------------------- Put_Video
+   ,* Пикселы из буфера строки, начиная от указателя pxbg,
+   ,* до указателя pxen пишет в y-строку видеопамяти
+   ,* Возвращает 0/1 - нет/есть ошибки
+   ,*/
+  static int  Put_Video (y, pxbg, pxen)
+  int y;  register char *pxbg, *pxen;
+  {  register int  x;
+      if (y>=0 && y<ver_max && pxbg<=pxen) {
+          x= pxbg - pc_video;
+          do putpixel (x++, y, *pxbg++); while (pxbg <= pxen);
+          y= 0;
+      } else y= 1;
+      return (y);
+  }  /* Put_Video */
+
+  /*----------------------------------------------------- Search
+   ,* Ищет затравочные пикселы в yt-строке видеопамяти,
+   ,* находящейся по указателю pc_video, начиная от
+   ,* указателя pcl до указателя pcr
+   ,* grn - код граничного пиксела
+   ,* new - код, которым перекрашивается область
+   ,* Возвращает: 0/1 - не найден/найден затравочный
+   ,*/
+  static int  Search (yt, pcl, pcr, grn, new)
+  int yt;  char *pcl, *pcr;  int grn, new;
+  {  register int pix;
+      register char *pc;
+      int x, otw;
+
+      otw= 0;
+      while (pcl <= pcr) {
+          pc= pcl;                          /* Указ тек пиксела */
+  /* Поиск крайнего правого не закрашенного пиксела в строке */
+          while ((pix= *pc & 255) != grn && pix != new && pc<pcr)
+              ++pc;
+
+          if (pc != pcl) {          /* Найден закрашиваемый */
+              ++otw;
+              x= pc - pc_video;      /* Его координата в строке */
+              if (pc != pcr || pix == grn || pix == new) --x;
+              Push_Stk (x, yt);
+          }
+  /* Продолжение анализа строки пока не достигнут прав пиксел */
+          pcl= pc;
+          while (((pix= *pc & 255) == grn || pix==new) && pc<pcr)
+              ++pc;
+          if (pc == pcl) ++pc;
+          pcl= pc;
+      }
+      return (otw);
+  }  /* Search */
+
+
+  /*----------------------------------------------------- V_FAST
+   ,* Построчная заливка с затравкой гранично-определенной
+   ,* области
+   ,*
+   ,* int V_FAST (int grn_pix, int new_pix, int x_isx, int y_isx)
+   ,*
+   ,* Вход:
+   ,* grn_pix - код граничного пиксела
+   ,* new_pix - код заполняющего пиксела
+   ,* x_isx   - координаты затравки
+   ,* y_isx
+   ,*
+   ,* Возвращает:
+   ,* -2 - нет места под растровую строку
+   ,* -1 - нет места под стек
+   ,*  0 - норма
+   ,*  1 - при чтении пикселов из видеопамяти в буферную
+   ,*      строки выход за пределы буферной строки
+   ,*  2 - исчерпан стек при запросе координат пикселов
+   ,*
+   ,*/
+  int V_FAST (grn_pix, new_pix, x_isx, y_isx)
+      int grn_pix, new_pix, x_isx, y_isx;
+  {
+      register char *pcl;    /* Указ левого  пиксела в строке */
+      register char *pcr;    /* Указ правого пиксела в строке */
+      int  otw;
+
+      otw= 0;
+
+  /* Инициализация стека */
+      if ((pn_stk= (int *)malloc (stk_max)) == NULL) {
+          --otw;  goto all;
+      }
+      pi_stk= pn_stk;
+
+  /* Заказ массива под растровую строку */
+      if ((pc_video= malloc (gor_max)) == NULL) {
+          otw= -2;  goto fre_stk;
+      }
+
+      Push_Stk (x_isx, y_isx);     /* Затравку в стек */
+
+  /* Цикл заливки строк до исчерпания стека */
+
+      while (pi_stk > pn_stk) {
+
+  /* Запрос координат затравки из стека */
+          if (Pop_Stk ()) {otw=2; break; }
+          pcl= pcr= pc_video + xtek;   /* Указ затравки */
+
+  /* Запрос полной строки из видеопамяти */
+          if (Get_Video (ytek, pc_video, pc_video+gor_max-1))
+          {otw= 1;  break; }
+
+  /* Закраска затравки и вправо от нее */
+          do *pcr++= new_pix; while ((*pcr & 255) != grn_pix);
+          --pcr;                    /* Указ крайнего правого */
+
+  /* Закраска влево */
+          while ((*--pcl & 255) != grn_pix) *pcl= new_pix;
+          ++pcl;                    /* Указ крайнего левого */
+
+  /* Занесение подправленной строки в видеопамять */
+          Put_Video (ytek, pcl, pcr);
+
+  /* Поиск затравок в строках ytek+1 и ytek-1,
+   ,* начиная с левого подинтервала, заданного pcl, до
+   ,* правого подинтервала, заданного pcr
+   ,*/
+          if (!Get_Video (++ytek, pcl, pcr))
+              Search (ytek, pcl, pcr, grn_pix, new_pix);
+
+          if (!Get_Video (ytek-= 2, pcl, pcr))
+              Search (ytek, pcl, pcr, grn_pix, new_pix);
+      }
+      free (pc_video);
+  fre_stk:
+      free (pn_stk);
+  all:
+      return (otw);
+  }  /* V_FAST */
+
+
+  /*--------------------------------------------------- V_FA_SET
+   ,* Устанавливает количественные ограничения для заливки
+   ,*/
+  void V_FA_SET (x_resolution, y_resolution, stack_length)
+      int  x_resolution, y_resolution, stack_length;
+  {
+      if (x_resolution > 0 && x_resolution <= MAX_GOR)
+          gor_max= x_resolution;
+      if (y_resolution > 0 && y_resolution <= MAX_VER)
+          ver_max= y_resolution;
+  /* Кол байт координат, заносимых в стек м.б. только четным */
+      if (stack_length > 0) stk_max= stack_length & 0177776;
+  }  /* V_FA_SET */
+
+
+
+
+
+
+
+  /*-------------------------------------------------- FAST_MAIN
+   ,*/
+  void main (void)
+  {
+      int   ii, kol, grn, new, entry;
+      int   x_isx, y_isx;
+      int   gdriver = DETECT, gmode;
+      int   Px[256] = {200,200,250,270,270,210,210,230,230};
+      int   Py[256] = {200,250,250,230,200,210,230,230,210};
+
+      kol= 5;              /* Кол-во вершин        */
+      grn= 11;             /* Код пикселов границы */
+      new= 14;             /* Код заливки          */
+      x_isx= 240;          /* Координаты затравки  */
+      y_isx= 240;
+      entry= 0;
+
+      initgraph(&gdriver, &gmode, "c:\tc\bgi");
+      if ((ii= graphresult()) != grOk) {
+          printf ("Err=%d\n", ii); goto all;
+      }
+
+  m0:goto m2;
+  m1:++entry;
+      printf("Vertexs, boundary_pixel, new_pixel= (%d %d %d) ? ",
+             kol, grn, new);
+      scanf ("%d%d%d", &kol, &grn, &new);
+      if (kol < 0) goto all;
+
+      for (ii=0; ii<kol; ++ii) {
+          printf ("Px[%d], Py[%d] = ? ", ii, ii);
+          scanf  ("%d%d", &Px[ii], &Py[ii]);
+      }
+
+      printf ("X,Y isx= (%d %d) ? ", x_isx, y_isx);
+      scanf ("%d%d", &x_isx, &y_isx);
+
+  m2:
+      setbkcolor(0);
+      cleardevice();
+
+  /* Построение границы */
+      setcolor (grn);
+      for (ii= 0; ii<kol-1; ++ii)
+          line (Px[ii], Py[ii], Px[ii+1], Py[ii+1]);
+      line (Px[kol-1], Py[kol-1], Px[0], Py[0]);
+
+  /* При первом входе строится квадратик дырки */
+      if (!entry) {
+          for (ii= kol; ii<kol+3; ++ii)
+              line (Px[ii], Py[ii], Px[ii+1], Py[ii+1]);
+          line (Px[kol+3], Py[kol+3], Px[kol], Py[kol]);
+      }
+
+  /* Установка количественных ограничений для проц заливки */
+      V_FA_SET (getmaxx()+1, getmaxy()+1, MAX_STK);
+
+      stklen= 0;           /* Занятое кол-во байт в стеке */
+
+  /* Заливка */
+      ii= V_FAST (grn, new, x_isx, y_isx);
+      printf ("Answer= %d MaxStack=%d\n", ii, stklen);
+      goto m1;
+
+  all:
+      closegraph();
+  }
+
+#+END_SRC
 * Cutting
 
 Можно ли автоматически сгенерировать по этой картинке программу на форте, которая будет форкаться для того чтобы как можно быстрее воспроизвести в точности такое изображение?
