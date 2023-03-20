@@ -1500,51 +1500,6 @@ Implemenation
   ;; (simple-test)
 #+END_SRC
 
-#+BEGIN_SRC lisp
-  (defun fill (cur-edge height width packflag)
-    (let ((stk `(,cur-edge))
-          (x-left)
-          (x-right))
-      (loop unless (null stk) do
-        (let ((cur-pnt (pop stk)))
-          (destructuring-bind (cur-y . cur-x)
-              cur-pnt
-            (loop while (fg-p cur-pnt packflag height width)
-                  do
-                     (setf (aref packflag cur-y cur-x) -888)
-
-                     (decf cur-x)
-                  finally (setf x-left cur-x))
-            (loop while (fg-p cur-pnt packflag height width)
-                  do
-                     (setf (aref packflag cur-y cur-x) -888)
-
-                     (incf cur-x)
-                  finally (setf x-right cur-x))
-            (block str-down
-              (let ((cur-y (let ((it (+ cur-y 1)))  (if (> it 0) it (return-from str-down))))
-                    (prev))
-                (loop for x-pnt from x-left to x-right
-
-                      when (fg-p (cons cur-y x-pnt) packflag height width)
-                        do (when (= -888 (aref packflag cur-y x-pnt))
-
-                             (when (not (= -888 prev))
-
-                               (push cur-pnt stk)))
-                           (setf prev (aref packflag cur-y x-pnt)))))
-            (block str-up
-              (let ((cur-y (let ((it (+ cur-y 1)))  (if (> it 0) it (return-from str-up))))
-                    (prev))
-                (loop for x-pnt from x-left to x-right
-                      when (fg-p (cons cur-y x-pnt) packflag height width)
-                        do (when (= -888 (aref packflag cur-y x-pnt))
-
-                             (when (not (= -888 prev))
-                               (push cur-pnt stk)))
-                           (setf prev (aref packflag cur-y x-pnt))))))))))
-#+END_SRC
-
 * Figures searching
 
 Чтобы найти все потенциальные точки, откуда может начинаться замкнутая фигура мы идем вниз по вертикальной оси и ищем переход с пустой 8x8 точки в ~packflag~ на непустую. Каждая такая непустая точка, выше который находится пустая - это потенциальный кандидат на начало фигуры.
