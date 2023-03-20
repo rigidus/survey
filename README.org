@@ -1386,58 +1386,161 @@ Implemenation
 4. То же самое проделывается для строки выше закрашиваемой.
 
 #+BEGIN_SRC lisp
-  (defun fill-8x8 (cur-edge height width packflag)
+  (defun fill-8x8 (cur-pnt height width packflag)
     "undebugged"
-    (let ((stk `(,cur-edge))  ;; Поместим первую точку в стек
+    (let ((stk     `(,cur-pnt))  ;; Поместим первую точку в стек
+          (x-left   )
+          (x-right  ))
+      ;; пока стек не пуст:
+      (loop for cur-pnt = (pop stk) then (pop stk)
+            for cur-y = (car cur-pnt) then (car cur-pnt)
+            for cur-x = (cdr cur-pnt) then (cdr cur-pnt)
+            always cur-pnt do
+              (setf x-left  cur-x)
+              (setf x-right cur-x)
+              (format t "cur-pnt: ~A stk: ~A ~%" cur-pnt stk)
+              (format t "init :: x-left: ~A | x-right: ~A ~%" x-left x-right)
+              ;; Закрасить максимальное кол-во пикселей влево от затравки,
+              ;; пока не попадется граничный пиксель. Это будет координата X-left
+              ;; NB: cur-x изменяется по мере продвижения влево
+              (loop always (fg-p (cons cur-y (- x-left 1)) packflag height width) do
+                ;; закрасить текущую точку
+                (setf (aref packflag cur-y x-left) -888)
+                ;; тест пройден, теперь можно сдвинуть координату X-LEFT влево
+                (decf x-left))
+              ;; Теперь у нас есть x-left
+              (format t "new x-left: ~A ~%" x-left)
+              ;; Закрасить максимальное кол-во пикселей вправо от затравки,
+              ;; пока не попадется граничный пиксель. Это будет координата X-right
+              (loop always (fg-p (cons cur-y (+ x-right 1)) packflag height width) do
+                ;; закрасить текущую точку (закрасим позже в цикле по строке)
+                ;; (setf (aref packflag cur-y x-right) -888)
+                ;; тест пройден, теперь можно сдвинуть координату X-RIGHT вправо
+                (incf x-right))
+              ;; Теперь у нас есть x-right
+              (format t "new x-right: ~A ~%" x-right)
+              ;; Заливка от x-left до x-right
+              (format t "fill y: ~A | x-left: ~A ; x-right: ~A ~%" cur-y x-left x-right)
+              (loop for x-pnt from x-left to x-right do
+                (setf (aref packflag cur-y x-pnt) -888))
+              ;; Проанализировать строку ниже закрашиваемой в пределах
+              ;; от X-left и X-right и найти в ней крайние правые пиксели всех
+              ;; незакрашенных фрагментов. Их координаты заносятся в стек
+              (let ((last-right))
+                (loop with cur-y = (+ cur-y 1)
+                      for x-pnt from x-left to x-right
+                      do (let* ((cur-fg (fg-p (cons cur-y x-pnt) packflag height width))
+                                (prv-fg (fg-p (cons cur-y (- x-pnt 1)) packflag height width))
+                                (cur-clr (when cur-fg (equal -888 (aref packflag cur-y x-pnt)))))
+                           (format t "cur-y: ~A ; x-pnt: ~A ; fg: ~A ~%" cur-y x-pnt cur-fg)
+                           (cond
+                             ;; предыдущий пиксель был фоновым и этот - фоновой и не закрашен:
+                             ;; ничего не делаем
+                             ;; ...
+                             ;;
+                             ((and (not prv-fg) cur-fg (not cur-clr))
+                              (progn
+                                (setf last-right (cons cur-y (- x-pnt 1)))
+                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
+                                        "а этот - тон и не закрашен:"
+                                        "сохраняем предыдущий как последний известный правый"
+                                        last-right)))
+                             ((and prv-fg cur-fg (not cur-clr))
+                              (progn
+                                (setf last-right (cons cur-y (- x-pnt 1)))
+                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                        "и этот - тон и не закрашен:"
+                                        "сохраняем предыдущий как последний известный правый"
+                                        last-right)))
+                             ((and prv-fg (not cur-fg) (not cur-clr))
+                              (progn
+                                (setf stk (append stk (list last-right)))
+                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                        "а этот - фон и не закрашен:"
+                                        "добавляем последний известный правый в очередь"
+                                        stk)))
+                             ;; предыдущий пиксель был фоновым и этот - фоновой и закрашен:
+                             ;; это невозможно, фоновые пиксели не могут быть закрашены
+                             ;; ...
+                             ;; предыдущий пиксель был фоновым, а этот - тон и закрашен:
+                             ;; ничего не делаем, пропускаем
+                             ;; ...
+                             ;; предыдущий пиксель был тон и этот - тон и закрашен:
+                             ;; ничего не делаем, пропускаем
+                             ;; ...
+                             ;; предыдущий пиксель был тон а этот - фоновой и не закрашен:
+                             ;; ничего не делаем, пропускаем
+                             ;; ...
+                             (t (setf last-right nil)))))
+                (when last-right
+                  (setf stk (append stk (list last-right)))
+                  (format t "~A~A~%~A ~a~%" "остался last-right, "
+                          ""
+                          "добавляем последний известный правый в очередь"
+                          stk)))
+              ;; То же самое проделывается для строки выше закрашиваемой
+              ;; [TODO]
+            ))
+    packflag)
+
+  (defun simple-test ()
+    (let* ((packflag #2A((0 0 0 0 0 )
+                         (0 1 1 1 0 )
+                         (0 1 1 1 0 )
+                         (0 0 0 0 0 )))
+           (start-point (cons 1 2))
+           (height 4)
+           (width 4)
+           (expected-result '((1 . 1) (1 . 2) (2 . 2) (2 . 1)))
+           (result (fill-8x8 start-point height width packflag)))
+      (if (equal result expected-result)
+          (format t "::= Test passed.")
+          (format t "::= Test failed. Expected:~%~A~%but got:~%~A" expected-result result))))
+
+  ;; (simple-test)
+#+END_SRC
+
+#+BEGIN_SRC lisp
+  (defun fill (cur-edge height width packflag)
+    (let ((stk `(,cur-edge))
           (x-left)
           (x-right))
-      ;; пока стек не пуст:
       (loop unless (null stk) do
-        (let ((cur-pnt (pop stk))) ;; извлечь затравку из стека
+        (let ((cur-pnt (pop stk)))
           (destructuring-bind (cur-y . cur-x)
               cur-pnt
-            ;; Закрасить максимальное кол-во пикселей влево от затравки,
-            ;; пока не попадется граничный пиксель. Это будет координата X-left
             (loop while (fg-p cur-pnt packflag height width)
-                  do ;; закрасить текущую точку
+                  do
                      (setf (aref packflag cur-y cur-x) -888)
-                     ;; сдвинуть координату CUR-X влево
+
                      (decf cur-x)
                   finally (setf x-left cur-x))
-            ;; Закрасить максимальное кол-во пикселей влево от затравки,
-            ;; пока не попадется граничный пиксель. Это будет координата X-right
             (loop while (fg-p cur-pnt packflag height width)
-                  do ;; закрасить текущую точку
+                  do
                      (setf (aref packflag cur-y cur-x) -888)
-                     ;; сдвинуть координату CUR-X влево
+
                      (incf cur-x)
                   finally (setf x-right cur-x))
-            ;; Проанализировать строку ниже закрашиваемой в пределах
-            ;; от X-left и X-right и найти в ней крайние правые пиксели всех
-            ;; незакрашенных фрагментов. Их координаты заносятся в стек
             (block str-down
               (let ((cur-y (let ((it (+ cur-y 1)))  (if (> it 0) it (return-from str-down))))
                     (prev))
                 (loop for x-pnt from x-left to x-right
-                      ;; только для пикселей с цветом тона
+
                       when (fg-p (cons cur-y x-pnt) packflag height width)
                         do (when (= -888 (aref packflag cur-y x-pnt))
-                             ;; обнаружен уже закрашенный пиксель.
+
                              (when (not (= -888 prev))
-                               ;; если прошлый пиксель был незакрашен, добавляем точку в стек
+
                                (push cur-pnt stk)))
                            (setf prev (aref packflag cur-y x-pnt)))))
-            ;; То же самое проделывается для строки выше закрашиваемой
             (block str-up
               (let ((cur-y (let ((it (+ cur-y 1)))  (if (> it 0) it (return-from str-up))))
                     (prev))
                 (loop for x-pnt from x-left to x-right
-                      ;; только для пикселей с цветом тона
                       when (fg-p (cons cur-y x-pnt) packflag height width)
                         do (when (= -888 (aref packflag cur-y x-pnt))
-                             ;; обнаружен уже закрашенный пиксель.
+
                              (when (not (= -888 prev))
-                               ;; если прошлый пиксель был незакрашен, добавляем точку в стек
                                (push cur-pnt stk)))
                            (setf prev (aref packflag cur-y x-pnt))))))))))
 #+END_SRC
