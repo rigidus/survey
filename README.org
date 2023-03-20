@@ -1590,7 +1590,7 @@ Implemenation
   ;;   (finish-output))
 #+END_SRC
 
-* Figures searching
+* Edges searching for figures
 
 Чтобы найти все потенциальные точки, откуда может начинаться замкнутая фигура мы идем вниз по вертикальной оси и ищем переход с пустой 8x8 точки в ~packflag~ на непустую. Каждая такая непустая точка, выше который находится пустая - это потенциальный кандидат на начало фигуры.
 
@@ -1620,21 +1620,6 @@ Implemenation
                     (push (cons yy xx) ret-candidates)
                     (setf prev flag)))))))
       (reverse ret-candidates)))
-
-  (defun arrays-equal-p (arr1 arr2 height width)
-    "untested"
-    (declare (optimize (speed 3))
-             (optimize (safety 0)))
-    (do* ((yy      0  (+ 1 yy)))
-         ((>= yy height))
-      (declare (type fixnum yy))
-      (do* ((xx      0  (+ 1 xx)))
-           ((>= xx width))
-        (declare (type fixnum xx))
-        (unless (equal (aref arr1 yy xx)
-                       (aref arr2 yy xx))
-          (return-from arrays-equal-p nil))))
-    t)
 
   ;; launchers
   (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
@@ -2044,7 +2029,7 @@ http://algolist.ru/graphics/fill.php
   }
 
 #+END_SRC
-* Cutting
+* TODO Cutting
 
 Можно ли автоматически сгенерировать по этой картинке программу на форте, которая будет форкаться для того чтобы как можно быстрее воспроизвести в точности такое изображение?
 
@@ -2086,7 +2071,7 @@ http://algolist.ru/graphics/fill.php
   ;;   (copy-png "x-snapshot-true-color.png" "aaaaa.png"))
 #+END_SRC
 
-* Figures
+* TODO Figures
 
 У меня есть некоторая битовая матрица полученная из изображения текста. Там где были буквы - теперь битовые единицы, там где был фон - битовые нули.
 
