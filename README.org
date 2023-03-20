@@ -1386,9 +1386,10 @@ Implemenation
 4. То же самое проделывается для строки выше закрашиваемой.
 
 #+BEGIN_SRC lisp
-  (defun fill-8x8 (cur-pnt height width packflag fill-color)
+  (defun fill-8x8 (cur-pnt height width packflag fill-color &optional ret-flag)
     "undebugged"
-    (let ((que     `(,cur-pnt))) ;; Поместим первую точку в стек
+    (let ((que     `(,cur-pnt)) ;; Поместим первую точку в стек
+          (res))                ;; Закрашенные точки возвращаются если ret-flag=t
       ;; пока стек не пуст:
       (loop for cur-pnt = (pop que) then (pop que)
             for cur-y = (car cur-pnt) then (car cur-pnt)
@@ -1427,8 +1428,13 @@ Implemenation
               ;; Заливка от x-left до x-right
               ;; (format t "закрашиваем - y: ~A | -от- x-left: ~A -до- x-right: ~A ~%"
               ;;         cur-y x-left x-right)
-              (loop for x-pnt from x-left to x-right do
-                (setf (aref packflag cur-y x-pnt) fill-color))
+              (if ret-flag
+                  (loop for x-pnt from x-left to x-right do
+                    (setf (aref packflag cur-y x-pnt) fill-color)
+                    (push (cons cur-y x-pnt) res))
+                  ;; else
+                  (loop for x-pnt from x-left to x-right do
+                    (setf (aref packflag cur-y x-pnt) fill-color)))
               ;;
               ;; (format t "закрашены пиксели в строке ~A:" cur-y)
               ;; (print packflag)
@@ -1555,9 +1561,11 @@ Implemenation
                   ;;         last-right
                   ;;         "добавляем оставшийся last-right в очередь, теперь она ="
                   ;;         que)
-                  ))
-            ))
-    packflag)
+                  )))
+      (if ret-flag
+          (values packflag (reverse (remove-duplicates res)))
+          ;; else
+          packflag)))
 
   (defun not-so-simple-test ()
     (let* ((packflag #2A((0 0 0 0 0 1 1 0 0 1 1)
@@ -1578,14 +1586,16 @@ Implemenation
                          (2 2 0 2 2 2 2 0 0 2 2)
                          (0 2 2 2 0 0 0 0 0 2 2)
                          (0 0 0 0 0 2 2 0 0 0 2)
-                         (1 0 0 0 0 2 2 2 2 2 2)))
-           (result (fill-8x8 start-point height width packflag 2)))
-      (if (equalp result exp-res)
-          (format t "::= Test passed.")
-          (format t "::= Test failed. Expected:~%~A~%but got:~%~A" exp-res result))))
+                         (1 0 0 0 0 2 2 2 2 2 2))))
+      (multiple-value-bind (result points)
+          (fill-8x8 start-point height width packflag 2 t)
+        (if (equalp result exp-res)
+            (format t "::= Test passed.")
+            (format t "::= Test failed. Expected:~%~A~%but got:~%~A" exp-res result))
+        (print points))))
 
   ;; (progn
-  ;;   (format t "~%~%~%")
+  ;;   (format t "~%~%")
   ;;   (not-so-simple-test)
   ;;   (finish-output))
 #+END_SRC
