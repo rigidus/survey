@@ -1398,43 +1398,47 @@ Implemenation
             always cur-pnt do
               (setf x-left  cur-x)
               (setf x-right cur-x)
-              (format t "(=*_*=) cur-pnt: ~A que: ~A ~%" cur-pnt que)
-              (format t "init :: x-left: ~A | x-right: ~A ~%" x-left x-right)
+              ;; (format t "(=*_*=) cur-pnt: ~A que: ~A ~%" cur-pnt que)
+              ;; (format t "init :: x-left: ~A | x-right: ~A ~%" x-left x-right)
               ;;
               ;; Закрасить максимальное кол-во пикселей влево от затравки,
               ;; пока не попадется граничный пиксель. Это будет координата X-left
               ;; NB: cur-x изменяется по мере продвижения влево
-              (format t "идем по строке влево ~%")
+              ;; (format t "идем по строке влево ~%")
               (loop always (fg-p (cons cur-y (- x-left 1)) packflag height width) do
                 ;; закрасить текущую точку (закрасим позже в цикле по строке)
                 ;; (setf (aref packflag cur-y x-right) fill-color)
                 ;; fg-тест пройден, теперь можно сдвинуть координату X-LEFT влево
                 (decf x-left))
               ;; Теперь у нас есть x-left
-              (format t "new x-left: ~A ~%" x-left)
+              ;; (format t "new x-left: ~A ~%" x-left)
               ;;
               ;; Закрасить максимальное кол-во пикселей вправо от затравки,
               ;; пока не попадется граничный пиксель. Это будет координата X-right
-              (format t "идем по строке вправо ~%")
+              ;; (format t "идем по строке вправо ~%")
               (loop always (fg-p (cons cur-y (+ x-right 1)) packflag height width) do
                 ;; закрасить текущую точку (закрасим позже в цикле по строке)
                 ;; (setf (aref packflag cur-y x-right) fill-color)
                 ;; fg-тест пройден, теперь можно сдвинуть координату X-RIGHT вправо
                 (incf x-right))
               ;; Теперь у нас есть x-right
-              (format t "new x-right: ~A ~%" x-right)
+              ;; (format t "new x-right: ~A ~%" x-right)
               ;;
               ;; Заливка от x-left до x-right
-              (format t "закрашиваем - y: ~A | -от- x-left: ~A -до- x-right: ~A ~%"
-                      cur-y x-left x-right)
+              ;; (format t "закрашиваем - y: ~A | -от- x-left: ~A -до- x-right: ~A ~%"
+              ;;         cur-y x-left x-right)
               (loop for x-pnt from x-left to x-right do
                 (setf (aref packflag cur-y x-pnt) fill-color))
+              ;;
+              ;; (format t "закрашены пиксели в строке ~A:" cur-y)
+              ;; (print packflag)
+              ;; (format t "~%")
               ;;
               ;; Проанализировать строку ниже закрашиваемой в пределах
               ;; от X-left и X-right и найти в ней крайние правые пиксели всех
               ;; незакрашенных последовательностей. Их координаты заносятся в стек
-              (let ((last-right))
-                (format t ";;~%low init: last-right is nil ~%")
+              (let ((last-right) (x-left x-left) (x-right x-right))
+                ;; (format t ";;~%low init: last-right is nil [~A..~A] ~%" x-left x-right)
                 (loop with cur-y = (+ cur-y 1)
                       for x-pnt from x-left to x-right
                       always (< cur-y height)
@@ -1442,8 +1446,8 @@ Implemenation
                                 (prv-fg (fg-p (cons cur-y (- x-pnt 1)) packflag height width))
                                 (cur-clr (when cur-fg (equal fill-color
                                                              (aref packflag cur-y x-pnt)))))
-                           (format t "low-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
-                                   cur-y x-pnt cur-fg cur-clr prv-fg)
+                           ;; (format t "low-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
+                           ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
                            (cond
                              ;; предыдущий пиксель был фоновым и этот - фоновой и не закрашен:
                              ;; ничего не делаем
@@ -1451,24 +1455,27 @@ Implemenation
                              ((and (not prv-fg) cur-fg (not cur-clr))
                               (progn
                                 (setf last-right (cons cur-y x-pnt))
-                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
-                                        "а этот - тон и не закрашен:"
-                                        "сохраняем текущий как last-right = "
-                                        last-right)))
+                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
+                                ;;         "а этот - тон и не закрашен:"
+                                ;;         "сохраняем текущий как last-right = "
+                                ;;         last-right)
+                                ))
                              ((and prv-fg cur-fg (not cur-clr))
                               (progn
                                 (setf last-right (cons cur-y x-pnt))
-                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                        "и этот - тон и не закрашен:"
-                                        "сохраняем текущий как last-right = "
-                                        last-right)))
+                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                ;;         "и этот - тон и не закрашен:"
+                                ;;         "сохраняем текущий как last-right = "
+                                ;;         last-right)
+                                ))
                              ((and prv-fg (not cur-fg) (not cur-clr))
-                              (progn
+                              (when last-right ;; если last-right не NIL
                                 (setf que (append que (list last-right)))
-                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                        "а этот - фон и не закрашен:"
-                                        "добавляем last-right в очередь :: "
-                                        que)))
+                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                ;;         "а этот - фон и не закрашен:"
+                                ;;         "добавляем last-right в очередь :: "
+                                ;;         que)
+                                ))
                              ;; предыдущий пиксель был фоновым и этот - фоновой и закрашен:
                              ;; это невозможно, фоновые пиксели не могут быть закрашены
                              ;; ...
@@ -1484,24 +1491,23 @@ Implemenation
                              (t (setf last-right nil)))))
                 (when last-right
                   (setf que (append que (list last-right)))
-                  (format t "~A~A~%~A~%~a~%" "остался last-right = "
-                          last-right
-                          "добавляем оставшийся last-right в очередь, теперь она ="
-                          que)))
+                  ;; (format t "~A~A~%~A~%~a~%" "остался last-right = "
+                  ;;         last-right
+                  ;;         "добавляем оставшийся last-right в очередь, теперь она ="
+                  ;;         que)
+                  ))
               ;; То же самое проделывается для строки выше закрашиваемой
-              (let ((last-right))
-                (format t ";;~%high init: last-right is nil ~%")
+              (let ((last-right) (x-left x-left) (x-right x-right))
+                ;; (format t ";;~%high init: last-right is nil [~A..~A] ~%" x-left x-right)
                 (loop with cur-y = (- cur-y 1)
                       for x-pnt from x-left to x-right
-                      with x-left
-                      with x-right
                       always (> cur-y 0)
                       do (let* ((cur-fg (fg-p (cons cur-y x-pnt) packflag height width))
                                 (prv-fg (fg-p (cons cur-y (- x-pnt 1)) packflag height width))
                                 (cur-clr (when cur-fg (equal fill-color
                                                              (aref packflag cur-y x-pnt)))))
-                           (format t "high-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
-                                   cur-y x-pnt cur-fg cur-clr prv-fg)
+                           ;; (format t "high-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
+                           ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
                            (cond
                              ;; предыдущий пиксель был фоновым и этот - фоновой и не закрашен:
                              ;; ничего не делаем
@@ -1509,24 +1515,27 @@ Implemenation
                              ((and (not prv-fg) cur-fg (not cur-clr))
                               (progn
                                 (setf last-right (cons cur-y x-pnt))
-                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
-                                        "а этот - тон и не закрашен:"
-                                        "сохраняем текущий как last-right = "
-                                        last-right)))
+                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
+                                ;;         "а этот - тон и не закрашен:"
+                                ;;         "сохраняем текущий как last-right = "
+                                ;;         last-right)
+                                ))
                              ((and prv-fg cur-fg (not cur-clr))
                               (progn
                                 (setf last-right (cons cur-y x-pnt))
-                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                        "и этот - тон и не закрашен:"
-                                        "сохраняем текущий как last-right = "
-                                        last-right)))
+                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                ;;         "и этот - тон и не закрашен:"
+                                ;;         "сохраняем текущий как last-right = "
+                                ;;         last-right)
+                                ))
                              ((and prv-fg (not cur-fg) (not cur-clr))
-                              (progn
+                              (when last-right ;; если last-right не NIL
                                 (setf que (append que (list last-right)))
-                                (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                        "а этот - фон и не закрашен:"
-                                        "добавляем last-right в очередь :: "
-                                        que)))
+                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                ;;         "а этот - фон и не закрашен:"
+                                ;;         "добавляем last-right в очередь :: "
+                                ;;         que)
+                                ))
                              ;; предыдущий пиксель был фоновым и этот - фоновой и закрашен:
                              ;; это невозможно, фоновые пиксели не могут быть закрашены
                              ;; ...
@@ -1542,39 +1551,43 @@ Implemenation
                              (t (setf last-right nil)))))
                 (when last-right
                   (setf que (append que (list last-right)))
-                  (format t "~A~A~%~A~%~a~%" "остался last-right = "
-                          last-right
-                          "добавляем оставшийся last-right в очередь, теперь она ="
-                          que)))
+                  ;; (format t "~A~A~%~A~%~a~%" "остался last-right = "
+                  ;;         last-right
+                  ;;         "добавляем оставшийся last-right в очередь, теперь она ="
+                  ;;         que)
+                  ))
             ))
     packflag)
 
-  (defun simple-test ()
-    (let* ((packflag #2A((0 0 0 0 0 0 0 0 0 0 0)
-                         (0 1 1 1 0 0 0 0 0 0 0)
+  (defun not-so-simple-test ()
+    (let* ((packflag #2A((0 0 0 0 0 1 1 0 0 1 1)
+                         (0 1 1 1 0 0 0 0 0 1 1)
                          (0 1 1 1 0 0 1 1 0 0 0)
-                         (0 1 0 1 0 0 1 1 0 0 0)
+                         (0 1 0 1 0 0 1 1 1 1 0)
                          (1 1 0 1 1 1 1 0 0 1 1)
                          (0 1 1 1 0 0 0 0 0 1 1)
-                         (0 0 0 0 0 0 0 0 0 0 0)))
+                         (0 0 0 0 0 1 1 0 0 0 1)
+                         (1 0 0 0 0 1 1 1 1 1 1)))
            (start-point (cons 1 2))
            (height (array-dimension packflag 0))
            (width  (array-dimension packflag 1))
-           (expected-result #2A((0 0 0 0 0 0 0 0 0 0 0)
-                                (0 2 2 2 0 0 0 0 0 0 0)
-                                (0 2 2 2 0 0 2 2 0 0 0)
-                                (0 2 0 2 0 0 2 2 0 0 0)
-                                (2 2 0 2 2 2 2 0 0 1 1)
-                                (0 2 2 2 0 0 0 0 0 1 1)
-                                (0 0 0 0 0 0 0 0 0 0 0)))
+           (exp-res  #2A((0 0 0 0 0 1 1 0 0 1 1)
+                         (0 2 2 2 0 0 0 0 0 1 1)
+                         (0 2 2 2 0 0 2 2 0 0 0)
+                         (0 2 0 2 0 0 2 2 2 2 0)
+                         (2 2 0 2 2 2 2 0 0 2 2)
+                         (0 2 2 2 0 0 0 0 0 2 2)
+                         (0 0 0 0 0 2 2 0 0 0 2)
+                         (1 0 0 0 0 2 2 2 2 2 2)))
            (result (fill-8x8 start-point height width packflag 2)))
-      (if (equal result expected-result)
+      (if (equalp result exp-res)
           (format t "::= Test passed.")
-          (format t "::= Test failed. Expected:~%~A~%but got:~%~A" expected-result result))))
+          (format t "::= Test failed. Expected:~%~A~%but got:~%~A" exp-res result))))
 
-  (progn
-    (format t "~%~%~%")
-    (simple-test))
+  ;; (progn
+  ;;   (format t "~%~%~%")
+  ;;   (not-so-simple-test)
+  ;;   (finish-output))
 #+END_SRC
 
 * Figures searching
