@@ -1730,28 +1730,29 @@ Implemenation
                                   (fill-8x8 candidate pf-height pf-width packflag-fills -999 t))
                                 (cur-edge
                                   (edge-8x8 candidate pf-height pf-width packflag-edges))
-                                (filename  (symbol-name (gensym))))
+                                ;; (filename  (symbol-name (gensym)))
+                                )
                            ;; (dbgout-array rest-of-candidates)
                            ;; (dbgout-array cur-edge)
                            ;; (dbgout-array cur-fill)
-                           ;; (push cur-edge edges)
-                           ;; (push cur-fill fills)
+                           (push cur-edge edges)
+                           (push cur-fill fills)
                            (remove-from-candidates cur-edge rest-of-candidates)
-                           (remove-from-candidates cur-fill rest-of-candidates)
-                           (plot-points packflag cur-fill -999)
-                           (plot-points packflag cur-edge -1000)
-                           ;; save pic
-                           (let ((new (re-conv-8x8 packflag packline height width
-                                                   channels bit-depth
-                                                   ;; img
-                                                   )))
-                             (with-open-file
-                                 (output (format nil "~A/~A.png" dir filename)
-                                         :element-type '(unsigned-byte 8)
-                                         :direction :output :if-exists :supersede)
-                               (png:encode new output)))
+                           ;; (remove-from-candidates cur-fill rest-of-candidates)
+                           ;; (plot-points packflag cur-fill -999)
+                           ;; (plot-points packflag cur-edge -1000)
+                           ;; ;; save pic
+                           ;; (let ((new (re-conv-8x8 packflag packline height width
+                           ;;                         channels bit-depth
+                           ;;                         ;; img
+                           ;;                         )))
+                           ;;   (with-open-file
+                           ;;       (output (format nil "~A/~A.png" dir filename)
+                           ;;               :element-type '(unsigned-byte 8)
+                           ;;               :direction :output :if-exists :supersede)
+                           ;;     (png:encode new output)))
                            ;; (print (length rest-of-candidates))
-                           ;; Хвостовая рекурсия
+                           ;; ;; Хвостовая рекурсия
                            (rec-elim rest-of-candidates)))))
             ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
             ;; оставшихся кандидатов тех, что совпадают с найденными краями
@@ -1763,29 +1764,22 @@ Implemenation
           ;; dbgout: Количество фигур
           (format t "~% len edges : ~A ~%" (length edges))
           (format t "~% len fills : ~A ~%" (length fills))
+          ;; Заполняем
+          (loop for cur-fill in fills do
+            (plot-points packflag cur-fill -1000))
+          (loop for cur-edge in edges do
+            (plot-points packflag cur-edge -999))
           ;; Выводим картинки
-          ;; (loop for edge in edges do
-          ;; (let ((filename  (symbol-name (gensym)))
-          ;;       (packflag2 (alexandria:copy-array packflag)))
-          ;;   ;;     ;; dbgout edge
-          ;;   ;;     (format t "~%~A" filename)
-          ;;   ;;     (print edge)
-          ;;   ;;     ;; show edge in pic
-          ;;   ;;     (loop for (yy . xx) in edge do
-          ;;   ;;       (setf (aref packflag2 yy xx) -999))
-          ;;   ;;     ;; test packflag2 differ packflag
-          ;;   ;;     ;; ...TODO...
-          ;;   ;;     ;; save pic
-          ;;   (let ((new (re-conv-8x8 packflag2 packline height width channels bit-depth
-          ;;                           ;; img
-          ;;                           )))
-          ;;     (with-open-file
-          ;;         (output (format nil "~A/~A.png" dir filename)
-          ;;                 :element-type '(unsigned-byte 8)
-          ;;                 :direction :output :if-exists :supersede)
-          ;;       (png:encode new output))))
-          ;; )
-          ))))
+          (let ((new (re-conv-8x8 packflag packline height width
+                                  channels bit-depth
+                                  ;; img
+                                  ))
+                (filename  (symbol-name (gensym))))
+            (with-open-file
+                (output (format nil "~A/~A.png" dir filename)
+                        :element-type '(unsigned-byte 8)
+                        :direction :output :if-exists :supersede)
+              (png:encode new output)))))))
 
 
   (time
