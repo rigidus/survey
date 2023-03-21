@@ -1390,7 +1390,6 @@ Implemenation
 #+NAME: fill_8x8
 #+BEGIN_SRC lisp
   (defun fill-8x8 (cur-pnt height width packflag fill-color &optional ret-flag)
-    "undebugged"
     (let ((que     `(,cur-pnt)) ;; Поместим первую точку в стек
           (res))                ;; Закрашенные точки возвращаются если ret-flag=t
       ;; пока стек не пуст:
@@ -1566,36 +1565,39 @@ Implemenation
                   ;;         que)
                   )))
       (if ret-flag
-          (values packflag (reverse (remove-duplicates res)))
+          (values (reverse (remove-duplicates res)))
           ;; else
-          packflag)))
+          (values))))
 
   (defun not-so-simple-test ()
-    (let* ((packflag #2A((0 0 0 0 0 1 1 0 0 1 1)
-                         (0 1 1 1 0 0 0 0 0 1 1)
-                         (0 1 1 1 0 0 1 1 0 0 0)
-                         (0 1 0 1 0 0 1 1 1 1 0)
-                         (1 1 0 1 1 1 1 0 0 1 1)
-                         (0 1 1 1 0 0 0 0 0 1 1)
-                         (0 0 0 0 0 1 1 0 0 0 1)
-                         (1 0 0 0 0 1 1 1 1 1 1)))
+    (let* ((packflag
+             (alexandria:copy-array
+              #2A((0 0 0 0 0 1 1 0 0 1 1)
+                  (0 1 1 1 0 0 0 0 0 1 1)
+                  (0 1 1 1 0 0 1 1 0 0 0)
+                  (0 1 0 1 0 0 1 1 1 1 0)
+                  (1 1 0 1 1 1 1 0 0 1 1)
+                  (0 1 1 1 0 0 0 0 0 1 1)
+                  (0 0 0 0 0 1 1 0 0 0 1)
+                  (1 0 0 0 0 1 1 1 1 1 1))))
            (start-point (cons 1 2))
            (height (array-dimension packflag 0))
            (width  (array-dimension packflag 1))
-           (exp-res  #2A((0 0 0 0 0 1 1 0 0 1 1)
-                         (0 2 2 2 0 0 0 0 0 1 1)
-                         (0 2 2 2 0 0 2 2 0 0 0)
-                         (0 2 0 2 0 0 2 2 2 2 0)
-                         (2 2 0 2 2 2 2 0 0 2 2)
-                         (0 2 2 2 0 0 0 0 0 2 2)
-                         (0 0 0 0 0 2 2 0 0 0 2)
-                         (1 0 0 0 0 2 2 2 2 2 2))))
-      (multiple-value-bind (result points)
-          (fill-8x8 start-point height width packflag 2 t)
-        (if (equalp result exp-res)
-            (format t "::= Test passed.")
-            (format t "::= Test failed. Expected:~%~A~%but got:~%~A" exp-res result))
-        (print points))))
+           (exp-res
+             (alexandria:copy-array
+              #2A((0 0 0 0 0 1 1 0 0 1 1)
+                  (0 2 2 2 0 0 0 0 0 1 1)
+                  (0 2 2 2 0 0 2 2 0 0 0)
+                  (0 2 0 2 0 0 2 2 2 2 0)
+                  (2 2 0 2 2 2 2 0 0 2 2)
+                  (0 2 2 2 0 0 0 0 0 2 2)
+                  (0 0 0 0 0 2 2 0 0 0 2)
+                  (1 0 0 0 0 2 2 2 2 2 2))))
+           (points (fill-8x8 start-point height width packflag 2 t)))
+      (if (equalp packflag exp-res)
+          (format t "::= Test passed.")
+          (format t "::= Test failed. Expected:~%~A~%but got:~%~A" exp-res packflag))
+      (print points)))
 
   ;; (progn
   ;;   (format t "~%~%")
@@ -1724,14 +1726,15 @@ Implemenation
 
   ;; fill launcher
 
-  (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
+  (let ((img (with-open-file (input "big-dark.png" :element-type '(unsigned-byte 8))
                (png:decode input)))
         (dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
     (multiple-value-bind (packflag packline height width channels bit-depth)
         (conv-8x8 img)
       (let ((pf-height (ash height -3))
             (pf-width  (ash width  -3))
-            (edges)) ;; края фигур
+            (edges) ;; края фигур
+            )
         (labels ((rec-elim (candidates)
                    ;; Ищем edges
                    (if (null candidates)
@@ -1739,35 +1742,39 @@ Implemenation
                        ;; else
                        (let* ((candidate (car candidates))
                               (rest-of-candidates (cdr candidates))
-                              (cur-edge ;;
-                                (edge-8x8 candidate pf-height pf-width packflag)
-                                ;; (multiple-value-bind (result points)
-                                ;;     (fill-8x8 candidate pf-height pf-width
-                                ;;               (alexandria:copy-array packflag)
-                                ;;               -999 t)
-                                ;;   (print points)
-                                ;;   points)
-                                )
+                              ;; (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
+                              ;; <=== HERE
+                              (cur-fill (fill-8x8 candidate pf-height pf-width packflag -999 t))
                               (filename  (symbol-name (gensym)))
                               (packflag2 (alexandria:copy-array packflag)))
                          ;; dbgout: rest-of-candidates
-                         ;; (format t "~% len rest-of-candidates : ~A ~%"
+                         ;; (format t "~%~%len rest-of-candidates : ~A"
                          ;;         (length rest-of-candidates))
                          ;; (print rest-of-candidates)
                          ;; dbgout: cur-edge
-                         ;; (format t "~% len cur-edge : ~A ~%" (length cur-edge))
+                         ;; (format t "~%len cur-edge : ~A" (length cur-edge))
                          ;; (print cur-edge)
+                         ;; dbgpit: cur-fill
+                         ;; (format t "~%len cur-fill : ~A" (length cur-fill))
+                         ;; (print cur-fill)
                          ;; show edge in pic
-                         (loop for (yy . xx) in cur-edge do
+                         ;; (loop for (yy . xx) in cur-edge do
+                         ;;   (setf (aref packflag2 yy xx) -999))
+                         ;; show fill in pic
+                         (loop for (yy . xx) in cur-fill do
                            (setf (aref packflag2 yy xx) -999))
                          ;; Сохраняем кайму
-                         (push cur-edge edges)
-                         ;; [TODO:gmm] - Заливка
-                         ;; ...
+                         ;; (push cur-edge edges)
+                         ;; Сохраняем заполнение
+                         (push cur-fill edges)
                          ;; Удаляем из кандидатов точки, которые часть каймы
-                         (loop for edge-pnt in cur-edge do
+                         ;; (loop for edge-pnt in cur-edge do
+                         ;;   (setf rest-of-candidates ;; delete really faster them remove
+                         ;;         (delete edge-pnt rest-of-candidates :test #'equal)))
+                         ;; Удаляем из кандидатов точки, которые часть fill-a
+                         (loop for fill-pnt in cur-fill do
                            (setf rest-of-candidates ;; delete really faster them remove
-                                 (delete edge-pnt rest-of-candidates :test #'equal)))
+                                 (delete fill-pnt rest-of-candidates :test #'equal)))
                          ;; show candidates in pic
                          (loop for (yy . xx) in rest-of-candidates do
                            (setf (aref packflag2 yy xx) -1000))
