@@ -1389,181 +1389,203 @@ Implemenation
 
 #+NAME: fill_8x8
 #+BEGIN_SRC lisp
+  ;; (declaim (OPTIMIZE (SPEED 3) #|(SAFETY 0)|# ))
+
+  (defstruct pnt
+    (yy 0 :type fixnum)
+    (xx 0 :type fixnum))
+
   (defun fill-8x8 (cur-pnt height width packflag fill-color &optional ret-flag)
+    (declare (optimize (speed 3)  (safety 0)  (debug 0)))
+    (declare (type fixnum width)  (type fixnum height))
     (let ((que     `(,cur-pnt)) ;; Поместим первую точку в стек
           (res))                ;; Закрашенные точки возвращаются если ret-flag=t
-      ;; пока стек не пуст:
-      (loop for cur-pnt = (pop que) then (pop que)
-            for cur-y = (car cur-pnt) then (car cur-pnt)
-            for cur-x = (cdr cur-pnt) then (cdr cur-pnt)
-            with x-left
-            with x-right
-            always cur-pnt do
-              (setf x-left  cur-x)
-              (setf x-right cur-x)
-              ;; (format t "(=*_*=) cur-pnt: ~A que: ~A ~%" cur-pnt que)
-              ;; (format t "init :: x-left: ~A | x-right: ~A ~%" x-left x-right)
-              ;;
-              ;; Закрасить максимальное кол-во пикселей влево от затравки,
-              ;; пока не попадется граничный пиксель. Это будет координата X-left
-              ;; NB: cur-x изменяется по мере продвижения влево
-              ;; (format t "идем по строке влево ~%")
-              (loop always (fg-p (cons cur-y (- x-left 1)) packflag height width) do
-                ;; закрасить текущую точку (закрасим позже в цикле по строке)
-                ;; (setf (aref packflag cur-y x-right) fill-color)
-                ;; fg-тест пройден, теперь можно сдвинуть координату X-LEFT влево
-                (decf x-left))
-              ;; Теперь у нас есть x-left
-              ;; (format t "new x-left: ~A ~%" x-left)
-              ;;
-              ;; Закрасить максимальное кол-во пикселей вправо от затравки,
-              ;; пока не попадется граничный пиксель. Это будет координата X-right
-              ;; (format t "идем по строке вправо ~%")
-              (loop always (fg-p (cons cur-y (+ x-right 1)) packflag height width) do
-                ;; закрасить текущую точку (закрасим позже в цикле по строке)
-                ;; (setf (aref packflag cur-y x-right) fill-color)
-                ;; fg-тест пройден, теперь можно сдвинуть координату X-RIGHT вправо
-                (incf x-right))
-              ;; Теперь у нас есть x-right
-              ;; (format t "new x-right: ~A ~%" x-right)
-              ;;
-              ;; Заливка от x-left до x-right
-              ;; (format t "закрашиваем - y: ~A | -от- x-left: ~A -до- x-right: ~A ~%"
-              ;;         cur-y x-left x-right)
-              (if ret-flag
-                  (loop for x-pnt from x-left to x-right do
-                    (setf (aref packflag cur-y x-pnt) fill-color)
-                    (push (cons cur-y x-pnt) res))
-                  ;; else
-                  (loop for x-pnt from x-left to x-right do
-                    (setf (aref packflag cur-y x-pnt) fill-color)))
-              ;;
-              ;; (format t "закрашены пиксели в строке ~A:" cur-y)
-              ;; (print packflag)
-              ;; (format t "~%")
-              ;;
-              ;; Проанализировать строку ниже закрашиваемой в пределах
-              ;; от X-left и X-right и найти в ней крайние правые пиксели всех
-              ;; незакрашенных последовательностей. Их координаты заносятся в стек
-              (let ((last-right) (x-left x-left) (x-right x-right))
-                ;; (format t ";;~%low init: last-right is nil [~A..~A] ~%" x-left x-right)
-                (loop with cur-y = (+ cur-y 1)
-                      for x-pnt from x-left to x-right
-                      always (< cur-y height)
-                      do (let* ((cur-fg (fg-p (cons cur-y x-pnt) packflag height width))
-                                (prv-fg (fg-p (cons cur-y (- x-pnt 1)) packflag height width))
-                                (cur-clr (when cur-fg (equal fill-color
-                                                             (aref packflag cur-y x-pnt)))))
-                           ;; (format t "low-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
-                           ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
-                           (cond
-                             ;; предыдущий пиксель был фоновым и этот - фоновой и не закрашен:
-                             ;; ничего не делаем
-                             ;; ...
-                             ((and (not prv-fg) cur-fg (not cur-clr))
-                              (progn
-                                (setf last-right (cons cur-y x-pnt))
-                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
-                                ;;         "а этот - тон и не закрашен:"
-                                ;;         "сохраняем текущий как last-right = "
-                                ;;         last-right)
-                                ))
-                             ((and prv-fg cur-fg (not cur-clr))
-                              (progn
-                                (setf last-right (cons cur-y x-pnt))
-                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                ;;         "и этот - тон и не закрашен:"
-                                ;;         "сохраняем текущий как last-right = "
-                                ;;         last-right)
-                                ))
-                             ((and prv-fg (not cur-fg) (not cur-clr))
-                              (when last-right ;; если last-right не NIL
-                                (setf que (append que (list last-right)))
-                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                ;;         "а этот - фон и не закрашен:"
-                                ;;         "добавляем last-right в очередь :: "
-                                ;;         que)
-                                ))
-                             ;; предыдущий пиксель был фоновым и этот - фоновой и закрашен:
-                             ;; это невозможно, фоновые пиксели не могут быть закрашены
-                             ;; ...
-                             ;; предыдущий пиксель был фоновым, а этот - тон и закрашен:
-                             ;; ничего не делаем, пропускаем
-                             ;; ...
-                             ;; предыдущий пиксель был тон и этот - тон и закрашен:
-                             ;; ничего не делаем, пропускаем
-                             ;; ...
-                             ;; предыдущий пиксель был тон а этот - фоновой и не закрашен:
-                             ;; ничего не делаем, пропускаем
-                             ;; ...
-                             (t (setf last-right nil)))))
-                (when last-right
-                  (setf que (append que (list last-right)))
-                  ;; (format t "~A~A~%~A~%~a~%" "остался last-right = "
-                  ;;         last-right
-                  ;;         "добавляем оставшийся last-right в очередь, теперь она ="
-                  ;;         que)
-                  ))
-              ;; То же самое проделывается для строки выше закрашиваемой
-              (let ((last-right) (x-left x-left) (x-right x-right))
-                ;; (format t ";;~%high init: last-right is nil [~A..~A] ~%" x-left x-right)
-                (loop with cur-y = (- cur-y 1)
-                      for x-pnt from x-left to x-right
-                      always (> cur-y 0)
-                      do (let* ((cur-fg (fg-p (cons cur-y x-pnt) packflag height width))
-                                (prv-fg (fg-p (cons cur-y (- x-pnt 1)) packflag height width))
-                                (cur-clr (when cur-fg (equal fill-color
-                                                             (aref packflag cur-y x-pnt)))))
-                           ;; (format t "high-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
-                           ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
-                           (cond
-                             ;; предыдущий пиксель был фоновым и этот - фоновой и не закрашен:
-                             ;; ничего не делаем
-                             ;; ...
-                             ((and (not prv-fg) cur-fg (not cur-clr))
-                              (progn
-                                (setf last-right (cons cur-y x-pnt))
-                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
-                                ;;         "а этот - тон и не закрашен:"
-                                ;;         "сохраняем текущий как last-right = "
-                                ;;         last-right)
-                                ))
-                             ((and prv-fg cur-fg (not cur-clr))
-                              (progn
-                                (setf last-right (cons cur-y x-pnt))
-                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                ;;         "и этот - тон и не закрашен:"
-                                ;;         "сохраняем текущий как last-right = "
-                                ;;         last-right)
-                                ))
-                             ((and prv-fg (not cur-fg) (not cur-clr))
-                              (when last-right ;; если last-right не NIL
-                                (setf que (append que (list last-right)))
-                                ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
-                                ;;         "а этот - фон и не закрашен:"
-                                ;;         "добавляем last-right в очередь :: "
-                                ;;         que)
-                                ))
-                             ;; предыдущий пиксель был фоновым и этот - фоновой и закрашен:
-                             ;; это невозможно, фоновые пиксели не могут быть закрашены
-                             ;; ...
-                             ;; предыдущий пиксель был фоновым, а этот - тон и закрашен:
-                             ;; ничего не делаем, пропускаем
-                             ;; ...
-                             ;; предыдущий пиксель был тон и этот - тон и закрашен:
-                             ;; ничего не делаем, пропускаем
-                             ;; ...
-                             ;; предыдущий пиксель был тон а этот - фоновой и не закрашен:
-                             ;; ничего не делаем, пропускаем
-                             ;; ...
-                             (t (setf last-right nil)))))
-                (when last-right
-                  (setf que (append que (list last-right)))
-                  ;; (format t "~A~A~%~A~%~a~%" "остался last-right = "
-                  ;;         last-right
-                  ;;         "добавляем оставшийся last-right в очередь, теперь она ="
-                  ;;         que)
-                  )))
+      (labels ((enq (elt)
+                 ;; (setf que (append que (list elt)))
+                 (push elt que)
+                 )
+               (deq ()
+                 (pop que))
+               (fg-pp (yy xx)
+                 (declare (type fixnum yy) (type fixnum yy)
+                          (ftype (function (fixnum fixnum) fixnum) fg-pp))
+                 (and (>= yy 0)
+                        (>= xx 0)
+                        (< yy height)
+                        (< xx width)
+                        (not (= 0 (aref packflag yy xx))))))
+        (declare (inline enq) (inline deq) (inline fg-pp))
+        ;; пока стек не пуст:
+        (loop for cur-pnt = (deq) then (deq)
+              for cur-y = (car cur-pnt) then (car cur-pnt)
+              for cur-x = (cdr cur-pnt) then (cdr cur-pnt)
+              always cur-pnt do
+                (let ((x-left cur-x)
+                      (x-right cur-x))
+                  (declare (type fixnum x-left)  (type fixnum x-right))
+                ;; (format t "(=*_*=) cur-pnt: ~A que: ~A ~%" cur-pnt que)
+                ;; (format t "init :: x-left: ~A | x-right: ~A ~%" x-left x-right)
+                ;;
+                ;; Закрасить максимальное кол-во пикселей влево от затравки,
+                ;; пока не попадется граничный пиксель. Это будет координата X-left
+                ;; NB: cur-x изменяется по мере продвижения влево
+                ;; (format t "идем по строке влево ~%")
+                (loop always (fg-pp cur-y (- x-left 1)) do
+                  ;; закрасить текущую точку (закрасим позже в цикле по строке)
+                  ;; (setf (aref packflag cur-y x-right) fill-color)
+                  ;; fg-тест пройден, теперь можно сдвинуть координату X-LEFT влево
+                  (decf x-left))
+                ;; Теперь у нас есть x-left
+                ;; (format t "new x-left: ~A ~%" x-left)
+                ;;
+                ;; Закрасить максимальное кол-во пикселей вправо от затравки,
+                ;; пока не попадется граничный пиксель. Это будет координата X-right
+                ;; (format t "идем по строке вправо ~%")
+                (loop always (fg-pp cur-y (+ x-right 1)) do
+                  ;; закрасить текущую точку (закрасим позже в цикле по строке)
+                  ;; (setf (aref packflag cur-y x-right) fill-color)
+                  ;; fg-тест пройден, теперь можно сдвинуть координату X-RIGHT вправо
+                  (incf x-right))
+                ;; Теперь у нас есть x-right
+                ;; (format t "new x-right: ~A ~%" x-right)
+                ;;
+                ;; Заливка от x-left до x-right
+                ;; (format t "закрашиваем - y: ~A | -от- x-left: ~A -до- x-right: ~A ~%"
+                ;;         cur-y x-left x-right)
+                (if ret-flag
+                    (loop for x-pnt from x-left to x-right do
+                      (setf (aref packflag cur-y x-pnt) fill-color)
+                      (push (cons cur-y x-pnt) res))
+                    ;; else
+                    (loop for x-pnt from x-left to x-right do
+                      (setf (aref packflag cur-y x-pnt) fill-color)))
+                ;;
+                ;; (format t "закрашены пиксели в строке ~A:" cur-y)
+                ;; (print packflag)
+                ;; (format t "~%")
+                ;;
+                ;; Проанализировать строку ниже закрашиваемой в пределах
+                ;; от X-left и X-right и найти в ней крайние правые пиксели всех
+                ;; незакрашенных последовательностей. Их координаты заносятся в стек
+                (let ((last-right) (x-left x-left) (x-right x-right))
+                  ;; (format t ";;~%low init: last-right is nil [~A..~A] ~%" x-left x-right)
+                  (loop with cur-y = (+ cur-y 1)
+                        for x-pnt from x-left to x-right
+                        always (< cur-y height)
+                        do (let* ((cur-fg (fg-pp cur-y x-pnt))
+                                  (prv-fg (fg-pp cur-y (- x-pnt 1)))
+                                  (cur-clr (when cur-fg (equal fill-color
+                                                               (aref packflag cur-y x-pnt)))))
+                             ;; (format t "low-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
+                             ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
+                             (cond
+                               ;; предыдущий пиксель был фоновым и этот - фоновой и не закрашен:
+                               ;; ничего не делаем
+                               ;; ...
+                               ((and (not prv-fg) cur-fg (not cur-clr))
+                                (progn
+                                  (setf last-right (cons cur-y x-pnt))
+                                  ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
+                                  ;;         "а этот - тон и не закрашен:"
+                                  ;;         "сохраняем текущий как last-right = "
+                                  ;;         last-right)
+                                  ))
+                               ((and prv-fg cur-fg (not cur-clr))
+                                (progn
+                                  (setf last-right (cons cur-y x-pnt))
+                                  ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                  ;;         "и этот - тон и не закрашен:"
+                                  ;;         "сохраняем текущий как last-right = "
+                                  ;;         last-right)
+                                  ))
+                               ((and prv-fg (not cur-fg) (not cur-clr))
+                                (when last-right ;; если last-right не NIL
+                                  (enq last-right)
+                                  ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                  ;;         "а этот - фон и не закрашен:"
+                                  ;;         "добавляем last-right в очередь :: "
+                                  ;;         que)
+                                  ))
+                               ;; предыдущий пиксель был фоновым и этот - фоновой и закрашен:
+                               ;; это невозможно, фоновые пиксели не могут быть закрашены
+                               ;; ...
+                               ;; предыдущий пиксель был фоновым, а этот - тон и закрашен:
+                               ;; ничего не делаем, пропускаем
+                               ;; ...
+                               ;; предыдущий пиксель был тон и этот - тон и закрашен:
+                               ;; ничего не делаем, пропускаем
+                               ;; ...
+                               ;; предыдущий пиксель был тон а этот - фоновой и не закрашен:
+                               ;; ничего не делаем, пропускаем
+                               ;; ...
+                               (t (setf last-right nil)))))
+                  (when last-right
+                    (enq last-right)
+                    ;; (format t "~A~A~%~A~%~a~%" "остался last-right = "
+                    ;;         last-right
+                    ;;         "добавляем оставшийся last-right в очередь, теперь она ="
+                    ;;         que)
+                    ))
+                ;; То же самое проделывается для строки выше закрашиваемой
+                (let ((last-right) (x-left x-left) (x-right x-right))
+                  ;; (format t ";;~%high init: last-right is nil [~A..~A] ~%" x-left x-right)
+                  (loop with cur-y = (- cur-y 1)
+                        for x-pnt from x-left to x-right
+                        always (> cur-y 0)
+                        do (let* ((cur-fg (fg-pp cur-y x-pnt))
+                                  (prv-fg (fg-pp cur-y (- x-pnt 1)))
+                                  (cur-clr (when cur-fg (equal fill-color
+                                                               (aref packflag cur-y x-pnt)))))
+                             ;; (format t "high-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
+                             ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
+                             (cond
+                               ;; предыдущий пиксель был фоновым и этот - фоновой и не закрашен:
+                               ;; ничего не делаем
+                               ;; ...
+                               ((and (not prv-fg) cur-fg (not cur-clr))
+                                (progn
+                                  (setf last-right (cons cur-y x-pnt))
+                                  ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был фоновым, "
+                                  ;;         "а этот - тон и не закрашен:"
+                                  ;;         "сохраняем текущий как last-right = "
+                                  ;;         last-right)
+                                  ))
+                               ((and prv-fg cur-fg (not cur-clr))
+                                (progn
+                                  (setf last-right (cons cur-y x-pnt))
+                                  ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                  ;;         "и этот - тон и не закрашен:"
+                                  ;;         "сохраняем текущий как last-right = "
+                                  ;;         last-right)
+                                  ))
+                               ((and prv-fg (not cur-fg) (not cur-clr))
+                                (when last-right ;; если last-right не NIL
+                                  (enq last-right)
+                                  ;; (format t "~A~A~%~A ~a~%" "предыдущий пиксель был тон, "
+                                  ;;         "а этот - фон и не закрашен:"
+                                  ;;         "добавляем last-right в очередь :: "
+                                  ;;         que)
+                                  ))
+                               ;; предыдущий пиксель был фоновым и этот - фоновой и закрашен:
+                               ;; это невозможно, фоновые пиксели не могут быть закрашены
+                               ;; ...
+                               ;; предыдущий пиксель был фоновым, а этот - тон и закрашен:
+                               ;; ничего не делаем, пропускаем
+                               ;; ...
+                               ;; предыдущий пиксель был тон и этот - тон и закрашен:
+                               ;; ничего не делаем, пропускаем
+                               ;; ...
+                               ;; предыдущий пиксель был тон а этот - фоновой и не закрашен:
+                               ;; ничего не делаем, пропускаем
+                               ;; ...
+                               (t (setf last-right nil)))))
+                  (when last-right
+                    (enq last-right)
+                    ;; (format t "~A~A~%~A~%~a~%" "остался last-right = "
+                    ;;         last-right
+                    ;;         "добавляем оставшийся last-right в очередь, теперь она ="
+                    ;;         que)
+                    )))))
       (if ret-flag
           (values (reverse (remove-duplicates res)))
           ;; else
@@ -1726,102 +1748,307 @@ Implemenation
 
   ;; fill launcher
 
-  (let ((img (with-open-file (input "big-dark.png" :element-type '(unsigned-byte 8))
-               (png:decode input)))
-        (dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
-    (multiple-value-bind (packflag packline height width channels bit-depth)
-        (conv-8x8 img)
-      (let ((pf-height (ash height -3))
-            (pf-width  (ash width  -3))
-            (edges) ;; края фигур
-            )
-        (labels ((rec-elim (candidates)
-                   ;; Ищем edges
-                   (if (null candidates)
-                       (values)
-                       ;; else
-                       (let* ((candidate (car candidates))
-                              (rest-of-candidates (cdr candidates))
-                              ;; (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
-                              ;; <=== HERE
-                              (cur-fill (fill-8x8 candidate pf-height pf-width packflag -999 t))
-                              (filename  (symbol-name (gensym)))
-                              (packflag2 (alexandria:copy-array packflag)))
-                         ;; dbgout: rest-of-candidates
-                         ;; (format t "~%~%len rest-of-candidates : ~A"
-                         ;;         (length rest-of-candidates))
-                         ;; (print rest-of-candidates)
-                         ;; dbgout: cur-edge
-                         ;; (format t "~%len cur-edge : ~A" (length cur-edge))
-                         ;; (print cur-edge)
-                         ;; dbgpit: cur-fill
-                         ;; (format t "~%len cur-fill : ~A" (length cur-fill))
-                         ;; (print cur-fill)
-                         ;; show edge in pic
-                         ;; (loop for (yy . xx) in cur-edge do
-                         ;;   (setf (aref packflag2 yy xx) -999))
-                         ;; show fill in pic
-                         (loop for (yy . xx) in cur-fill do
-                           (setf (aref packflag2 yy xx) -999))
-                         ;; Сохраняем кайму
-                         ;; (push cur-edge edges)
-                         ;; Сохраняем заполнение
-                         (push cur-fill edges)
-                         ;; Удаляем из кандидатов точки, которые часть каймы
-                         ;; (loop for edge-pnt in cur-edge do
-                         ;;   (setf rest-of-candidates ;; delete really faster them remove
-                         ;;         (delete edge-pnt rest-of-candidates :test #'equal)))
-                         ;; Удаляем из кандидатов точки, которые часть fill-a
-                         (loop for fill-pnt in cur-fill do
-                           (setf rest-of-candidates ;; delete really faster them remove
-                                 (delete fill-pnt rest-of-candidates :test #'equal)))
-                         ;; show candidates in pic
-                         (loop for (yy . xx) in rest-of-candidates do
-                           (setf (aref packflag2 yy xx) -1000))
-                         ;; save pic
-                         (let ((new (re-conv-8x8 packflag2 packline height width
-                                                 channels bit-depth
-                                                 ;; img
-                                                 )))
-                           (with-open-file
-                               (output (format nil "~A/~A.png" dir filename)
-                                       :element-type '(unsigned-byte 8)
-                                       :direction :output :if-exists :supersede)
-                             (png:encode new output)))
-                         ;; Хвостовая рекурсия
-                         ;; (print (length rest-of-candidates))
-                         (rec-elim rest-of-candidates)))))
-          ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
-          ;; оставшихся кандидатов тех, что совпадают с найденными краями
-          ;; пока кандидатов не останется. На выходе - edges
-          (rec-elim (start-fig-candidates-8x8 packflag pf-height pf-width)))
-        ;; Убираем слишком мелкие фигуры
-        ;; (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
-        ;;                                           edges)))
-        ;; dbgout: Количество фигур
-        (format t "~% len edges : ~A ~%" (length edges))
-        ;; Выводим картинки
-        ;; (loop for edge in edges do
-        ;;   (let ((filename  (symbol-name (gensym)))
-        ;;         (packflag2 (alexandria:copy-array packflag)))
-        ;;     ;; dbgout edge
-        ;;     (format t "~%~A" filename)
-        ;;     (print edge)
-        ;;     ;; show edge in pic
-        ;;     (loop for (yy . xx) in edge do
-        ;;       (setf (aref packflag2 yy xx) -999))
-        ;;     ;; test packflag2 differ packflag
-        ;;     ;; ...TODO...
-        ;;     ;; save pic
-        ;;     (let ((new (re-conv-8x8 packflag2 packline height width channels bit-depth
-        ;;                             ;; img
-        ;;                             )))
-        ;;       (with-open-file
-        ;;           (output (format nil "~A/~A.png" dir filename)
-        ;;                   :element-type '(unsigned-byte 8)
-        ;;                   :direction :output :if-exists :supersede)
-        ;;         (png:encode new output)))))
-        )))
+  (defun launcher ()
+    (let ((img (with-open-file (input "big-dark.png" :element-type '(unsigned-byte 8))
+                 (png:decode input)))
+          (dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
+      (multiple-value-bind (packflag packline height width channels bit-depth)
+          (conv-8x8 img)
+        (let ((pf-height (ash height -3))
+              (pf-width  (ash width  -3))
+              (edges) ;; края фигур
+              )
+          (labels ((rec-elim (candidates)
+                     ;; Ищем edges
+                     (if (null candidates)
+                         (values)
+                         ;; else
+                         (let* ((candidate (car candidates))
+                                (rest-of-candidates (cdr candidates))
+                                ;; (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
+                                ;; <=== HERE
+                                (cur-fill
+                                  (fill-8x8 candidate pf-height pf-width packflag -999 t))
+                                (filename  (symbol-name (gensym)))
+                                ;; (packflag2 (alexandria:copy-array packflag))
+                                )
+                           ;; dbgout: rest-of-candidates
+                           ;; (format t "~%~%len rest-of-candidates : ~A"
+                           ;;         (length rest-of-candidates))
+                           ;; (print rest-of-candidates)
+                           ;; dbgout: cur-edge
+                           ;; (format t "~%len cur-edge : ~A" (length cur-edge))
+                           ;; (print cur-edge)
+                           ;; dbgpit: cur-fill
+                           ;; (format t "~%len cur-fill : ~A" (length cur-fill))
+                           ;; (print cur-fill)
+                           ;; show edge in pic
+                           ;; (loop for (yy . xx) in cur-edge do
+                           ;;   (setf (aref packflag2 yy xx) -999))
+                           ;; show fill in pic
+                           ;; (loop for (yy . xx) in cur-fill do
+                           ;;   (setf (aref packflag2 yy xx) -999))
+                           ;; Сохраняем кайму
+                           ;; (push cur-edge edges)
+                           ;; Сохраняем заполнение
+                           (push cur-fill edges)
+                           ;; Удаляем из кандидатов точки, которые часть каймы
+                           ;; (loop for edge-pnt in cur-edge do
+                           ;;   (setf rest-of-candidates ;; delete really faster them remove
+                           ;;         (delete edge-pnt rest-of-candidates :test #'equal)))
+                           ;; Удаляем из кандидатов точки, которые часть fill-a
+                           (loop for fill-pnt in cur-fill do
+                             (setf rest-of-candidates ;; delete really faster them remove
+                                   (delete fill-pnt rest-of-candidates :test #'equal)))
+                           ;; show candidates in pic
+                           ;; (loop for (yy . xx) in rest-of-candidates do
+                           ;;   (setf (aref packflag2 yy xx) -1000))
+                           ;; save pic
+                           (let ((new (re-conv-8x8 packflag packline height width
+                                                   channels bit-depth
+                                                   ;; img
+                                                   )))
+                             (with-open-file
+                                 (output (format nil "~A/~A.png" dir filename)
+                                         :element-type '(unsigned-byte 8)
+                                         :direction :output :if-exists :supersede)
+                               (png:encode new output)))
+                           ;; Хвостовая рекурсия
+                           ;; (print (length rest-of-candidates))
+                           (rec-elim rest-of-candidates)))))
+            ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
+            ;; оставшихся кандидатов тех, что совпадают с найденными краями
+            ;; пока кандидатов не останется. На выходе - edges
+            (rec-elim (start-fig-candidates-8x8 packflag pf-height pf-width)))
+          ;; Убираем слишком мелкие фигуры
+          ;; (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
+          ;;                                           edges)))
+          ;; dbgout: Количество фигур
+          (format t "~% len edges : ~A ~%" (length edges))
+          ;; Выводим картинки
+          ;; (loop for edge in edges do
+          ;; (let ((filename  (symbol-name (gensym)))
+          ;;       (packflag2 (alexandria:copy-array packflag)))
+          ;;   ;;     ;; dbgout edge
+          ;;   ;;     (format t "~%~A" filename)
+          ;;   ;;     (print edge)
+          ;;   ;;     ;; show edge in pic
+          ;;   ;;     (loop for (yy . xx) in edge do
+          ;;   ;;       (setf (aref packflag2 yy xx) -999))
+          ;;   ;;     ;; test packflag2 differ packflag
+          ;;   ;;     ;; ...TODO...
+          ;;   ;;     ;; save pic
+          ;;   (let ((new (re-conv-8x8 packflag2 packline height width channels bit-depth
+          ;;                           ;; img
+          ;;                           )))
+          ;;     (with-open-file
+          ;;         (output (format nil "~A/~A.png" dir filename)
+          ;;                 :element-type '(unsigned-byte 8)
+          ;;                 :direction :output :if-exists :supersede)
+          ;;       (png:encode new output))))
+          ;; )
+          ))))
+
+
+  (time
+   (launcher))
+  ;; Evaluation took:
+  ;; 656.897 seconds of real time
+  ;; 652.011014 seconds of total run time (647.816506 user, 4.194508 system)
+  ;; [ Run times consist of 5.728 seconds GC time, and 646.284 seconds non-GC time. ]
+  ;; 99.26% CPU
+  ;; 1,639,435,959,675 processor cycles
+  ;; 962,569,603,088 bytes consed
+  ;;
+  ;; Evaluation took:
+  ;; 12.700 seconds of real time
+  ;; 12.531951 seconds of total run time (12.360053 user, 0.171898 system)
+  ;; [ Run times consist of 0.008 seconds GC time, and 12.524 seconds non-GC time. ]
+  ;; 98.68% CPU
+  ;; 31,703,284,102 processor cycles
+  ;; 1,237,423,856 bytes consed
+
+
+  ;; (ql:quickload :tracer)
+
+  ;; (progn
+  ;;   (tracer:with-tracing ("CL-USER")
+  ;;     (launcher))
+  ;;   (tracer:save-report "/home/rigidus/src/survey/report.json"))
+
+#+END_SRC
+
+
+#+BEGIN_SRC lisp
+  (defparameter *queue* (make-array 10 :element-type 'fixnum))
+  (defparameter *head*  0)
+  (defparameter *tail*  0)
+
+
+  (defun enqueue (item)
+    (when (= (length *queue*) (fill-pointer *queue*))
+      (setf (fill-pointer *queue*) 0))
+    (vector-push-extend item *queue*))
+
+  (defun dequeue ()
+    (let ((item (aref *queue* 0)))
+      (rotatef (subseq *queue* 0 1)
+               (subseq *queue* 1))
+      (decf (fill-pointer *queue*))
+      item))
+
+  (defun show ()
+    (let ((result '()))
+      (dotimes (i *size*)
+        (push (aref *queue* i) result))
+      (reverse result)))
+
+  (defun test-queue ()
+    (let ((result '())
+          (q (make-queue)))
+                                          ; проверка начального состояния очереди
+      (assert (= (queue-length q) 0))
+      (assert (null (dequeue q)))
+      (assert (null (show q)))
+                                          ; добавление элементов в очередь
+      (enqueue q 1)
+      (enqueue q 2)
+      (enqueue q 3)
+                                          ; проверка длины очереди и элементов в ней
+      (assert (= (queue-length q) 3))
+      (assert (= (dequeue q) 1))
+      (assert (= (dequeue q) 2))
+                                          ; добавление элементов до переполнения очереди
+      (dotimes (i 7)
+        (enqueue q (+ i 3)))
+                                          ; проверка переполнения очереди
+      (assert (= (queue-length q) 5))
+                                          ; удаление элементов из очереди
+      (assert (= (dequeue q) 3))
+      (assert (= (dequeue q) 4))
+                                          ; добавление элементов после удаления
+      (enqueue q 10)
+      (enqueue q 11)
+                                          ; проверка длины очереди и элементов в ней
+      (assert (= (queue-length q) 4))
+                                          ; вывод всех элементов в очереди
+      (setq result (show q))
+      (assert (= (length result) 4))
+      (assert (= (car result) 10))
+      (assert (= (cadr result) 11))
+      (assert (= (caddr result) 5))
+      (assert (= (cadddr result) 6))))
+#+END_SRC
+
+#+BEGIN_SRC lisp
+  ;; (require :sb-sprof)
+
+  ;; (sb-sprof:profile-call-counts "CL-USER")
+
+  ;; (sb-sprof:with-profiling (:max-samples 1000
+  ;;                           :report :flat
+  ;;                           :mode :time
+  ;;                           :loop t)
+  ;;   (launcher))
+
+  Number of samples:   1000
+  Sample interval:     0.01 seconds
+  Total sampling time: 10.0 seconds
+  Graph cycles:        0
+  Sampled threads:
+  #<THREAD "main thread" RUNNING {10018342F3}> (192/1048576 bytes, 1 hash buckets)
+  #<THREAD "Swank Sentinel" RUNNING {10084A4363}> (160/1048576 bytes, 1 hash buckets)
+  #<THREAD "finalizer" RUNNING {1001834283}> (40/1048576 bytes, 1 hash buckets)
+  #<THREAD "control-thread" RUNNING {10086E24A3}> (168/1048576 bytes, 1 hash buckets)
+  #<THREAD "worker" RUNNING {1001834103}> (8336/1048576 bytes, 38 hash buckets)
+  #<THREAD "swank-indentation-cache-thread" RUNNING {10086E2BC3}> (184/1048576 bytes, 1 hash buckets)
+  #<THREAD "repl-thread" RUNNING {1009499D33}> (216/1048576 bytes, 1 hash buckets)
+  #<THREAD "auto-flush-thread" RUNNING {1001830213}> (272/1048576 bytes, 2 hash buckets)
+  #<THREAD "reader-thread" RUNNING {10086E27E3}> (192/1048576 bytes, 1 hash buckets)
+
+  Self        Total        Cumul
+  Nr  Count     %  Count     %  Count     %    Calls  Function
+  ------------------------------------------------------------------------
+  1    522  52.2    522  52.2    522  52.2        -  foreign function syscall
+  2    222  22.2    222  22.2    744  74.4        -  foreign function __poll
+  3     60   6.0     94   9.4    804  80.4        -  SB-IMPL::APPEND2
+  4     33   3.3     33   3.3    837  83.7        -  foreign function clock_nanosleep
+  5      4   0.4    102  10.2    841  84.1      137  FILL-8X8
+  6      2   0.2      6   0.6    843  84.3        1  CONV-8X8
+  7      2   0.2      2   0.2    845  84.5        -  GENERIC--
+  8      2   0.2      2   0.2    847  84.7        -  SB-KERNEL:HAIRY-DATA-VECTOR-REF
+  9      1   0.1      2   0.2    848  84.8 73097464  FG-P
+  10      1   0.1      1   0.1    849  84.9        -  SB-VM::SLOW-HAIRY-DATA-VECTOR-REF
+  11      1   0.1      1   0.1    850  85.0        -  GENERIC-<
+  12      1   0.1      1   0.1    851  85.1        -  (SB-VM::OPTIMIZED-DATA-VECTOR-REF (UNSIGNED-BYTE 8))
+  13      0   0.0    887  88.7    851  85.1        -  foreign function call_into_lisp
+  14      0   0.0    776  77.6    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-10" :IN SB-THREAD::RUN)
+  15      0   0.0    776  77.6    851  85.1        -  (FLET SB-UNIX::BODY :IN SB-THREAD::RUN)
+  16      0   0.0    776  77.6    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-3" :IN SB-THREAD::RUN)
+  17      0   0.0    776  77.6    851  85.1        -  SB-THREAD::RUN
+  18      0   0.0    776  77.6    851  85.1        -  foreign function funcall1
+  19      0   0.0    776  77.6    851  85.1        -  foreign function new_thread_trampoline
+  20      0   0.0    522  52.2    851  85.1        -  (FLET SB-UNIX::BODY :IN SB-THREAD::FUTEX-WAIT)
+  21      0   0.0    522  52.2    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-3" :IN SB-THREAD::%CONDITION-WAIT)
+  22      0   0.0    522  52.2    851  85.1        -  SB-THREAD:CONDITION-WAIT
+  23      0   0.0    522  52.2    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-1" :IN SB-THREAD::CALL-WITH-MUTEX)
+  24      0   0.0    522  52.2    851  85.1        -  SB-THREAD::CALL-WITH-MUTEX
+  25      0   0.0    522  52.2    851  85.1        -  (FLET SWANK/BACKEND:RECEIVE-IF :IN "/home/rigidus/.emacs.d/elpa/slime-20211108.2224/swank/sbcl.lisp")
+  26      0   0.0    332  33.2    851  85.1        -  SWANK/SBCL::CALL-WITH-BREAK-HOOK
+  27      0   0.0    332  33.2    851  85.1        -  (FLET SWANK/BACKEND:CALL-WITH-DEBUGGER-HOOK :IN "/home/rigidus/.emacs.d/elpa/slime-20211108.2224/swank/sbcl.lisp")
+  28      0   0.0    222  22.2    851  85.1        -  SB-SYS:WAIT-UNTIL-FD-USABLE
+  29      0   0.0    222  22.2    851  85.1        -  SB-IMPL::REFILL-INPUT-BUFFER
+  30      0   0.0    221  22.1    851  85.1        -  SWANK::CALL-WITH-BINDINGS
+  31      0   0.0    111  11.1    851  85.1        -  SB-IMPL::INPUT-CHAR/UTF-8
+  32      0   0.0    111  11.1    851  85.1        -  (LAMBDA (&REST REST) :IN SB-IMPL::GET-EXTERNAL-FORMAT)
+  33      0   0.0    111  11.1    851  85.1        -  READ-CHAR
+  34      0   0.0    111  11.1    851  85.1        -  SB-IMPL::%READ-PRESERVING-WHITESPACE
+  35      0   0.0    111  11.1    851  85.1        -  READ
+  36      0   0.0    111  11.1    851  85.1        -  SB-IMPL::REPL-READ-FORM-FUN
+  37      0   0.0    111  11.1    851  85.1        -  SB-IMPL::REPL-FUN
+  38      0   0.0    111  11.1    851  85.1        -  (LAMBDA NIL :IN SB-IMPL::TOPLEVEL-REPL)
+  39      0   0.0    111  11.1    851  85.1        -  SB-IMPL::%WITH-REBOUND-IO-SYNTAX
+  40      0   0.0    111  11.1    851  85.1        -  SB-IMPL::TOPLEVEL-REPL
+  41      0   0.0    111  11.1    851  85.1        -  SB-IMPL::TOPLEVEL-INIT
+  42      0   0.0    111  11.1    851  85.1        -  (FLET SB-UNIX::BODY :IN SB-IMPL::START-LISP)
+  43      0   0.0    111  11.1    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-3" :IN SB-IMPL::START-LISP)
+  44      0   0.0    111  11.1    851  85.1        -  SB-IMPL::START-LISP
+  45      0   0.0    111  11.1    851  85.1        -  SWANK::SENTINEL
+  46      0   0.0    111  11.1    851  85.1        -  SWANK::DISPATCH-LOOP
+  47      0   0.0    111  11.1    851  85.1        -  SWANK::CONTROL-THREAD
+  48      0   0.0    111  11.1    851  85.1        -  (LAMBDA NIL :IN SWANK::INDENTATION-CACHE-LOOP)
+  49      0   0.0    111  11.1    851  85.1        -  SWANK::WAIT-FOR-EVENT
+  50      0   0.0    111  11.1    851  85.1        -  SWANK::PROCESS-REQUESTS
+  51      0   0.0    111  11.1    851  85.1        -  (LAMBDA NIL :IN SWANK::HANDLE-REQUESTS)
+  52      0   0.0    111  11.1    851  85.1        -  SWANK::INDENTATION-CACHE-LOOP
+  53      0   0.0    111  11.1    851  85.1        -  SWANK::HANDLE-REQUESTS
+  54      0   0.0    111  11.1    851  85.1        -  SWANK/BACKEND:AUTO-FLUSH-LOOP
+  55      0   0.0    111  11.1    851  85.1        -  SB-IMPL::FD-STREAM-READ-N-BYTES
+  56      0   0.0    111  11.1    851  85.1        -  SB-IMPL:ANSI-STREAM-READ-SEQUENCE
+  57      0   0.0    111  11.1    851  85.1        -  READ-SEQUENCE
+  58      0   0.0    111  11.1    851  85.1        -  SWANK/RPC::READ-CHUNK
+  59      0   0.0    111  11.1    851  85.1        -  SWANK/RPC::PARSE-HEADER
+  60      0   0.0    111  11.1    851  85.1        -  SWANK/RPC:READ-PACKET
+  61      0   0.0    111  11.1    851  85.1        -  SWANK/RPC:READ-MESSAGE
+  62      0   0.0    111  11.1    851  85.1        -  SWANK::DECODE-MESSAGE
+  63      0   0.0    111  11.1    851  85.1        -  SWANK::READ-LOOP
+  64      0   0.0    110  11.0    851  85.1        1  LAUNCHER
+  65      0   0.0    110  11.0    851  85.1        -  (LAMBDA ()) in #<code id=BB11 [1] (LAMBDA ()) {537B431F}>
+  66      0   0.0    110  11.0    851  85.1        -  SWANK::EVAL-REGION
+  67      0   0.0    110  11.0    851  85.1        -  (LAMBDA NIL :IN SWANK:INTERACTIVE-EVAL-REGION)
+  68      0   0.0    110  11.0    851  85.1        -  SWANK::CALL-WITH-RETRY-RESTART
+  69      0   0.0    110  11.0    851  85.1        -  SWANK::CALL-WITH-BUFFER-SYNTAX
+  70      0   0.0    110  11.0    851  85.1        -  SB-INT:SIMPLE-EVAL-IN-LEXENV
+  71      0   0.0    110  11.0    851  85.1        -  EVAL
+  72      0   0.0    110  11.0    851  85.1        -  SWANK:EVAL-FOR-EMACS
+  73      0   0.0    110  11.0    851  85.1        -  (LAMBDA NIL :IN SWANK::SPAWN-WORKER-THREAD)
+  74      0   0.0     34   3.4    851  85.1        -  foreign function alloc_list
+  75      0   0.0     34   3.4    851  85.1        -  LIST-ALLOC-TRAMP
+  76      0   0.0     33   3.3    851  85.1        -  SB-UNIX::NANOSLEEP-FLOAT
+  77      0   0.0     33   3.3    851  85.1        -  SLEEP
+  ------------------------------------------------------------------------
+  149  14.9                                     elsewhere
+
 #+END_SRC
 
 ** Reference fill
