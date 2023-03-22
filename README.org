@@ -1821,24 +1821,32 @@ Implemenation
 
   (time
    (launcher))
+#+END_SRC
 
+[TODO:gmm] - Перенести найденное в файлы и отправить в тессеракт
 
-  ;; Evaluation took:
-  ;; 656.897 seconds of real time
-  ;; 652.011014 seconds of total run time (647.816506 user, 4.194508 system)
-  ;; [ Run times consist of 5.728 seconds GC time, and 646.284 seconds non-GC time. ]
-  ;; 99.26% CPU
-  ;; 1,639,435,959,675 processor cycles
-  ;; 962,569,603,088 bytes consed
-  ;;
-  ;; Evaluation took:
-  ;; 12.700 seconds of real time
-  ;; 12.531951 seconds of total run time (12.360053 user, 0.171898 system)
-  ;; [ Run times consist of 0.008 seconds GC time, and 12.524 seconds non-GC time. ]
-  ;; 98.68% CPU
-  ;; 31,703,284,102 processor cycles
-  ;; 1,237,423,856 bytes consed
+* Tesseract
 
+#+BEGIN_SRC lisp
+  (ql:quickload :cl-tesseract)
+
+  (cl-tesseract:with-base-api
+
+  (cl-tesseract:image-to-text #P"~/Downloads/eurotext.png" :lang "rus+eng")
+#+END_SRC
+
+* Profiling
+
+#+BEGIN_SRC lisp
+  ;; (require :sb-sprof)
+
+  ;; (sb-sprof:profile-call-counts "CL-USER")
+
+  ;; (sb-sprof:with-profiling (:max-samples 1000
+  ;;                           :report :flat
+  ;;                           :mode :time
+  ;;                           :loop t)
+  ;;   (launcher))
 
   ;; (ql:quickload :tracer)
 
@@ -1846,120 +1854,6 @@ Implemenation
   ;;   (tracer:with-tracing ("CL-USER")
   ;;     (launcher))
   ;;   (tracer:save-report "/home/rigidus/src/survey/report.json"))
-
-#+END_SRC
-
-
-
-#+BEGIN_SRC lisp
-  (require :sb-sprof)
-
-  (sb-sprof:profile-call-counts "CL-USER")
-
-  (sb-sprof:with-profiling (:max-samples 1000
-                            :report :flat
-                            :mode :time
-                            :loop t)
-    (launcher))
-
-  Number of samples:   1000
-  Sample interval:     0.01 seconds
-  Total sampling time: 10.0 seconds
-  Graph cycles:        0
-  Sampled threads:
-  #<THREAD "main thread" RUNNING {10018342F3}> (192/1048576 bytes, 1 hash buckets)
-  #<THREAD "Swank Sentinel" RUNNING {10084A4363}> (160/1048576 bytes, 1 hash buckets)
-  #<THREAD "finalizer" RUNNING {1001834283}> (40/1048576 bytes, 1 hash buckets)
-  #<THREAD "control-thread" RUNNING {10086E24A3}> (168/1048576 bytes, 1 hash buckets)
-  #<THREAD "worker" RUNNING {1001834103}> (8336/1048576 bytes, 38 hash buckets)
-  #<THREAD "swank-indentation-cache-thread" RUNNING {10086E2BC3}> (184/1048576 bytes, 1 hash buckets)
-  #<THREAD "repl-thread" RUNNING {1009499D33}> (216/1048576 bytes, 1 hash buckets)
-  #<THREAD "auto-flush-thread" RUNNING {1001830213}> (272/1048576 bytes, 2 hash buckets)
-  #<THREAD "reader-thread" RUNNING {10086E27E3}> (192/1048576 bytes, 1 hash buckets)
-
-  Self        Total        Cumul
-  Nr  Count     %  Count     %  Count     %    Calls  Function
-  ------------------------------------------------------------------------
-  1    522  52.2    522  52.2    522  52.2        -  foreign function syscall
-  2    222  22.2    222  22.2    744  74.4        -  foreign function __poll
-  3     60   6.0     94   9.4    804  80.4        -  SB-IMPL::APPEND2
-  4     33   3.3     33   3.3    837  83.7        -  foreign function clock_nanosleep
-  5      4   0.4    102  10.2    841  84.1      137  FILL-8X8
-  6      2   0.2      6   0.6    843  84.3        1  CONV-8X8
-  7      2   0.2      2   0.2    845  84.5        -  GENERIC--
-  8      2   0.2      2   0.2    847  84.7        -  SB-KERNEL:HAIRY-DATA-VECTOR-REF
-  9      1   0.1      2   0.2    848  84.8 73097464  FG-P
-  10      1   0.1      1   0.1    849  84.9        -  SB-VM::SLOW-HAIRY-DATA-VECTOR-REF
-  11      1   0.1      1   0.1    850  85.0        -  GENERIC-<
-  12      1   0.1      1   0.1    851  85.1        -  (SB-VM::OPTIMIZED-DATA-VECTOR-REF (UNSIGNED-BYTE 8))
-  13      0   0.0    887  88.7    851  85.1        -  foreign function call_into_lisp
-  14      0   0.0    776  77.6    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-10" :IN SB-THREAD::RUN)
-  15      0   0.0    776  77.6    851  85.1        -  (FLET SB-UNIX::BODY :IN SB-THREAD::RUN)
-  16      0   0.0    776  77.6    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-3" :IN SB-THREAD::RUN)
-  17      0   0.0    776  77.6    851  85.1        -  SB-THREAD::RUN
-  18      0   0.0    776  77.6    851  85.1        -  foreign function funcall1
-  19      0   0.0    776  77.6    851  85.1        -  foreign function new_thread_trampoline
-  20      0   0.0    522  52.2    851  85.1        -  (FLET SB-UNIX::BODY :IN SB-THREAD::FUTEX-WAIT)
-  21      0   0.0    522  52.2    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-3" :IN SB-THREAD::%CONDITION-WAIT)
-  22      0   0.0    522  52.2    851  85.1        -  SB-THREAD:CONDITION-WAIT
-  23      0   0.0    522  52.2    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-1" :IN SB-THREAD::CALL-WITH-MUTEX)
-  24      0   0.0    522  52.2    851  85.1        -  SB-THREAD::CALL-WITH-MUTEX
-  25      0   0.0    522  52.2    851  85.1        -  (FLET SWANK/BACKEND:RECEIVE-IF :IN "/home/rigidus/.emacs.d/elpa/slime-20211108.2224/swank/sbcl.lisp")
-  26      0   0.0    332  33.2    851  85.1        -  SWANK/SBCL::CALL-WITH-BREAK-HOOK
-  27      0   0.0    332  33.2    851  85.1        -  (FLET SWANK/BACKEND:CALL-WITH-DEBUGGER-HOOK :IN "/home/rigidus/.emacs.d/elpa/slime-20211108.2224/swank/sbcl.lisp")
-  28      0   0.0    222  22.2    851  85.1        -  SB-SYS:WAIT-UNTIL-FD-USABLE
-  29      0   0.0    222  22.2    851  85.1        -  SB-IMPL::REFILL-INPUT-BUFFER
-  30      0   0.0    221  22.1    851  85.1        -  SWANK::CALL-WITH-BINDINGS
-  31      0   0.0    111  11.1    851  85.1        -  SB-IMPL::INPUT-CHAR/UTF-8
-  32      0   0.0    111  11.1    851  85.1        -  (LAMBDA (&REST REST) :IN SB-IMPL::GET-EXTERNAL-FORMAT)
-  33      0   0.0    111  11.1    851  85.1        -  READ-CHAR
-  34      0   0.0    111  11.1    851  85.1        -  SB-IMPL::%READ-PRESERVING-WHITESPACE
-  35      0   0.0    111  11.1    851  85.1        -  READ
-  36      0   0.0    111  11.1    851  85.1        -  SB-IMPL::REPL-READ-FORM-FUN
-  37      0   0.0    111  11.1    851  85.1        -  SB-IMPL::REPL-FUN
-  38      0   0.0    111  11.1    851  85.1        -  (LAMBDA NIL :IN SB-IMPL::TOPLEVEL-REPL)
-  39      0   0.0    111  11.1    851  85.1        -  SB-IMPL::%WITH-REBOUND-IO-SYNTAX
-  40      0   0.0    111  11.1    851  85.1        -  SB-IMPL::TOPLEVEL-REPL
-  41      0   0.0    111  11.1    851  85.1        -  SB-IMPL::TOPLEVEL-INIT
-  42      0   0.0    111  11.1    851  85.1        -  (FLET SB-UNIX::BODY :IN SB-IMPL::START-LISP)
-  43      0   0.0    111  11.1    851  85.1        -  (FLET "WITHOUT-INTERRUPTS-BODY-3" :IN SB-IMPL::START-LISP)
-  44      0   0.0    111  11.1    851  85.1        -  SB-IMPL::START-LISP
-  45      0   0.0    111  11.1    851  85.1        -  SWANK::SENTINEL
-  46      0   0.0    111  11.1    851  85.1        -  SWANK::DISPATCH-LOOP
-  47      0   0.0    111  11.1    851  85.1        -  SWANK::CONTROL-THREAD
-  48      0   0.0    111  11.1    851  85.1        -  (LAMBDA NIL :IN SWANK::INDENTATION-CACHE-LOOP)
-  49      0   0.0    111  11.1    851  85.1        -  SWANK::WAIT-FOR-EVENT
-  50      0   0.0    111  11.1    851  85.1        -  SWANK::PROCESS-REQUESTS
-  51      0   0.0    111  11.1    851  85.1        -  (LAMBDA NIL :IN SWANK::HANDLE-REQUESTS)
-  52      0   0.0    111  11.1    851  85.1        -  SWANK::INDENTATION-CACHE-LOOP
-  53      0   0.0    111  11.1    851  85.1        -  SWANK::HANDLE-REQUESTS
-  54      0   0.0    111  11.1    851  85.1        -  SWANK/BACKEND:AUTO-FLUSH-LOOP
-  55      0   0.0    111  11.1    851  85.1        -  SB-IMPL::FD-STREAM-READ-N-BYTES
-  56      0   0.0    111  11.1    851  85.1        -  SB-IMPL:ANSI-STREAM-READ-SEQUENCE
-  57      0   0.0    111  11.1    851  85.1        -  READ-SEQUENCE
-  58      0   0.0    111  11.1    851  85.1        -  SWANK/RPC::READ-CHUNK
-  59      0   0.0    111  11.1    851  85.1        -  SWANK/RPC::PARSE-HEADER
-  60      0   0.0    111  11.1    851  85.1        -  SWANK/RPC:READ-PACKET
-  61      0   0.0    111  11.1    851  85.1        -  SWANK/RPC:READ-MESSAGE
-  62      0   0.0    111  11.1    851  85.1        -  SWANK::DECODE-MESSAGE
-  63      0   0.0    111  11.1    851  85.1        -  SWANK::READ-LOOP
-  64      0   0.0    110  11.0    851  85.1        1  LAUNCHER
-  65      0   0.0    110  11.0    851  85.1        -  (LAMBDA ()) in #<code id=BB11 [1] (LAMBDA ()) {537B431F}>
-  66      0   0.0    110  11.0    851  85.1        -  SWANK::EVAL-REGION
-  67      0   0.0    110  11.0    851  85.1        -  (LAMBDA NIL :IN SWANK:INTERACTIVE-EVAL-REGION)
-  68      0   0.0    110  11.0    851  85.1        -  SWANK::CALL-WITH-RETRY-RESTART
-  69      0   0.0    110  11.0    851  85.1        -  SWANK::CALL-WITH-BUFFER-SYNTAX
-  70      0   0.0    110  11.0    851  85.1        -  SB-INT:SIMPLE-EVAL-IN-LEXENV
-  71      0   0.0    110  11.0    851  85.1        -  EVAL
-  72      0   0.0    110  11.0    851  85.1        -  SWANK:EVAL-FOR-EMACS
-  73      0   0.0    110  11.0    851  85.1        -  (LAMBDA NIL :IN SWANK::SPAWN-WORKER-THREAD)
-  74      0   0.0     34   3.4    851  85.1        -  foreign function alloc_list
-  75      0   0.0     34   3.4    851  85.1        -  LIST-ALLOC-TRAMP
-  76      0   0.0     33   3.3    851  85.1        -  SB-UNIX::NANOSLEEP-FLOAT
-  77      0   0.0     33   3.3    851  85.1        -  SLEEP
-  ------------------------------------------------------------------------
-  149  14.9                                     elsewhere
-
 #+END_SRC
 
 ** Reference fill
@@ -2299,6 +2193,7 @@ http://algolist.ru/graphics/fill.php
   <<launcher>>
 #+END_SRC
 
+* Tesseract
 * TODO Cutting
 
 Можно ли автоматически сгенерировать по этой картинке программу на форте, которая будет форкаться для того чтобы как можно быстрее воспроизвести в точности такое изображение?
@@ -2792,6 +2687,43 @@ Rigidus Rigidus
 
 Этот пример показывает, как можно использовать макрос `with-undo
 
+Концепция, которую я описал, заключается в создании макроса with-undo, который предоставляет механизм для сохранения истории изменений в функциях и переменных и возврата к предыдущим состояниям.
+
+Рассмотрим эту идею более подробно:
+
+    Определение макроса with-undo
+
+Макрос with-undo определен с помощью ключевых слов defmacro, которое позволяет создавать новые формы языка Lisp. Макрос принимает два аргумента: список привязок bindings, содержащий исходные значения переменных или функций, и форму body, которая содержит код, который может вносить изменения в переменные или функции.
+
+    Сохранение текущих значений переменных и функций
+
+Перед выполнением body макрос with-undo сохраняет текущие значения переменных и функций, указанных в bindings, используя форму (let ((var val) ...)). Значения переменных и функций сохраняются в локальные переменные макроса, которые будут использоваться для восстановления значений при возврате к предыдущему состоянию.
+
+    Выполнение кода
+
+Затем with-undo выполняет форму body, которая может вносить изменения в переменные и функции.
+
+    Обработка ошибок
+
+Если происходит ошибка, например, вызывается условие error, with-undo перехватывает ошибку, используя форму unwind-protect. Это гарантирует, что сохраненные значения переменных и функций будут восстановлены, даже если происходит ошибка.
+
+    Восстановление предыдущих значений
+
+После выполнения body макрос with-undo восстанавливает исходные значения переменных и функций, используя форму (setf var val). Это возвращает переменные и функции к их предыдущим состояниям.
+
+    Использование макроса
+
+Вы можете использовать макрос with-undo для изменения функций и переменных в вашем коде, предоставляя механизм отката изменений в случае ошибок. Например, если вы хотите изменить функцию my-function, вы можете использовать макрос with-undo, чтобы сохранить исходное определение функции, затем определить новую версию функции внутри with-undo, и если происходит ошибка, восстановить исходное определение функции.
+
+vbnet
+
+;; Сохраняем исходное определение функции
+(with-undo ((original-fn (symbol-function 'my-function)))
+  ;; Определяем новую версию функции
+  (defun my-function (x y)
+    (+ x y)))
+
+;; ...ваш код...
 
 Как в лиспе происходит переопределение функции в REPL. Имя функции - это символ с которым связан скомпилированный код и когда я переопределяю функцию я перезаписываю этот код? Или существует иной механизм?
 
