@@ -986,7 +986,7 @@ How to make screenshot:
    :path "x-snapshot-true-color-telegram.png")
 #+END_SRC
 
-* Conv8x8
+* Conv8x8 and ReConv8x8
 
 После создания скриншота нам нужно уменьшить его до минимального размера (например, для передачи по сети, если это необходимо).
 
@@ -1151,7 +1151,6 @@ How to make screenshot:
                                       (logior #b01111111
                                               (aref old yy1 xx1 zz)))))))))))
       new))
-
   ;; launcher
   ;; (let* ((img
   ;;          (with-open-file
@@ -1168,6 +1167,7 @@ How to make screenshot:
   ;;                   :element-type '(unsigned-byte 8)
   ;;                   :direction :output :if-exists :supersede)
   ;;         (png:encode new output)))))
+
 #+END_SRC
 
 * Edge detector
@@ -1717,11 +1717,19 @@ Implemenation
 
   ;; (macroexpand-1 '(remove-from-candidates list-of-points rest-of-candidates))
 
+  (defun save-packflag (filepath par-packflag par-packline y-size x-size channels bit-depth)
+    (let ((new (re-conv-8x8 par-packflag par-packline y-size x-size channels bit-depth)))
+      (with-open-file (output filepath :element-type '(unsigned-byte 8)
+                                       :direction :output :if-exists :supersede)
+        (png:encode new output))))
+
+  ;; launcher
 
   (defun launcher ()
-    (let ((img (with-open-file (input "big-dark.png" :element-type '(unsigned-byte 8))
+    (let ((img (with-open-file (input "incall.png" :element-type '(unsigned-byte 8))
                  (png:decode input)))
-          (dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym))))))
+          (dir  (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym)))))
+          (dir2 (ensure-directories-exist (format nil "./~A_/" (symbol-name (gensym))))))
       (multiple-value-bind (packflag packline height width channels bit-depth)
           (conv-8x8 img)
         (let ((pf-height (ash height -3))
@@ -1748,38 +1756,47 @@ Implemenation
                                 (x-min (reduce #'min xs))
                                 (y-max (reduce #'max ys))
                                 (x-max (reduce #'max xs))
-                                (y-dif (- y-max y-min))
-                                (x-dif (- x-max x-min))
-                                (ss (* y-dif x-dif))
-                                (lcf (length cur-fill))
-                                (lce (length cur-edge))
-                                (dev (deviation-in-percent lcf lce)))
-                           ;; (when (> dev 50)
-                             (format t "ss:~A ~T lcf:~A ~T ~A%~%" ss lcf dev)
-                             (plot-points packflag cur-fill -1000)
-                             (plot-points packflag cur-edge -999)
-                             ;; (dbgout-array rest-of-candidates)
-                             ;; (dbgout-array cur-edge)
-                             ;; (dbgout-array cur-fill)
-                             (push cur-edge edges)
-                             (push cur-fill fills)
-                             (remove-from-candidates cur-edge rest-of-candidates)
-                             ;; (remove-from-candidates cur-fill rest-of-candidates)
-                             ;; (plot-points packflag cur-fill -999)
-                             ;; (plot-points packflag cur-edge -1000)
-                             ;; ;; save pic
-                             (let ((new (re-conv-8x8 packflag packline height width
-                                                     channels bit-depth
-                                                     ;; img
-                                                     )))
-                               (with-open-file
-                                   (output (format nil "~A/~A-~A.png" dir filename dev)
-                                           :element-type '(unsigned-byte 8)
-                                           :direction :output :if-exists :supersede)
-                                 (png:encode new output)))
-                             ;; (print (length rest-of-candidates))
-                             ;; ;; Хвостовая рекурсия
-                             (rec-elim rest-of-candidates)))))
+                                (y-dif (+ 1 (- y-max y-min)))
+                                (x-dif (+ 1 (- x-max x-min)))
+                                (new-packflag (make-array `(,pf-height ,pf-width)
+                                                          :element-type 'fixnum
+                                                          :initial-element 0))
+                                (new-packline (make-array `(,pf-height ,pf-width ,channels)
+                                                          :element-type '(unsigned-byte 8)
+                                                          :initial-element 0)))
+                           (format t "y-dif:~A x-dif:~A ~%" y-dif x-dif)
+                           (plot-points packflag cur-fill -1000)
+                           (plot-points packflag cur-edge -999)
+                           ;; (dbgout-array rest-of-candidates)
+                           ;; (dbgout-array cur-edge)
+                           ;; (dbgout-array cur-fill)
+                           (do* ((yy 0  (+ 1 yy)))
+                                ((>= yy y-dif))
+                             (declare (type fixnum yy))
+                             (do* ((xx 0  (+ 1 xx)))
+                                  ((>= xx x-dif))
+                               (declare (type fixnum xx))
+                               (let ((old-pkf-pnt (aref packflag (+ yy y-min) (+ xx x-min))))
+                                 (declare (type fixnum old-pkf-pnt))
+                                 (if old-pkf-pnt
+                                     (setf (aref new-packflag yy xx) old-pkf-pnt)
+                                     (setf (aref new-packflag yy xx) 0)))))
+                           (save-packflag (format nil "~A/~A.png" dir filename)
+                                          new-packflag new-packline (ash y-dif 3) (ash x-dif 3)
+                                          channels bit-depth)
+                           (push cur-edge edges)
+                           (push cur-fill fills)
+                           (remove-from-candidates cur-edge rest-of-candidates)
+                           ;; (remove-from-candidates cur-fill rest-of-candidates)
+                           ;; (plot-points packflag cur-fill -999)
+                           ;; (plot-points packflag cur-edge -1000)
+                           ;; save pic
+                           (save-packflag (format nil "~A/~A.png" dir2 filename)
+                                          packflag packline height width
+                                          channels bit-depth)
+                           ;; (print (length rest-of-candidates))
+                           ;; ;; Хвостовая рекурсия
+                           (rec-elim rest-of-candidates)))))
             ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
             ;; оставшихся кандидатов тех, что совпадают с найденными краями
             ;; пока кандидатов не останется. На выходе - edges
@@ -1792,20 +1809,10 @@ Implemenation
           ;; Заполняем с выводом кол-в фигур
           (loop for cur-fill in fills
                 for cur-edge in edges
-                do (let* ((ys (mapcar #'car cur-edge))
-                          (xs (mapcar #'cdr cur-edge))
-                          (y-min (reduce #'min ys))
-                          (x-min (reduce #'min xs))
-                          (y-max (reduce #'max ys))
-                          (x-max (reduce #'max xs))
-                          (y-dif (- y-max y-min))
-                          (x-dif (- x-max x-min))
-                          (ss (* y-dif x-dif))
-                          (lcf (length cur-fill))
-                          (dev (deviation-in-percent lcf ss)))
-                     (format t "ss:~A ~T lcf:~A ~T ~A%~%" ss lcf dev)
-                     (plot-points packflag cur-fill -1000)
-                     (plot-points packflag cur-edge -999)))
+                do
+                   ;; (format t "ss:~A ~T lcf:~A ~T ~A%~%" ss lcf dev)
+                   (plot-points packflag cur-fill -1000)
+                   (plot-points packflag cur-edge -999))
           ;; Выводим картинки
           (let ((new (re-conv-8x8 packflag packline height width
                                   channels bit-depth
@@ -1817,7 +1824,6 @@ Implemenation
                         :element-type '(unsigned-byte 8)
                         :direction :output :if-exists :supersede)
               (png:encode new output)))))))
-
 
   (time
    (launcher))
