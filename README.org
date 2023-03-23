@@ -1151,22 +1151,34 @@ How to make screenshot:
                                       (logior #b01111111
                                               (aref old yy1 xx1 zz)))))))))))
       new))
+
   ;; launcher
-  ;; (let* ((img
-  ;;          (with-open-file
-  ;;              ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
-  ;;              (input "antalya.png" :element-type '(unsigned-byte 8))
-  ;;            (png:decode input))))
-  ;;   (multiple-value-bind (packflag packline height width channels bit-depth)
-  ;;       (conv-8x8 img)
-  ;;     (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
-  ;;                             ;; img
-  ;;                             )))
-  ;;       (with-open-file
-  ;;           (output "copy1.png"
-  ;;                   :element-type '(unsigned-byte 8)
-  ;;                   :direction :output :if-exists :supersede)
-  ;;         (png:encode new output)))))
+
+  (defun save-packflag-for-test (filepath par-packflag par-packline y-size x-size channels bit-depth &optional img)
+    (let ((new (re-conv-8x8 par-packflag par-packline y-size x-size channels bit-depth img)))
+      (with-open-file (output filepath :element-type '(unsigned-byte 8)
+                                       :direction :output :if-exists :supersede)
+        (png:encode new output))))
+
+
+  (let* ((img
+           (with-open-file
+               ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
+               (input "antalya.png" :element-type '(unsigned-byte 8))
+             (png:decode input))))
+    (multiple-value-bind (packflag packline height width channels bit-depth)
+        (conv-8x8 img)
+      ;; (save-packflag-for-test
+      ;; "copy2.png" packflag packline height width channels bit-depth img)))
+      (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
+                              img
+                              )))
+        (with-open-file
+            (output "copy1.png"
+                    :element-type '(unsigned-byte 8)
+                    :direction :output :if-exists :supersede)
+          (png:encode new output)))
+      ))
 
 #+END_SRC
 
@@ -1717,11 +1729,12 @@ Implemenation
 
   ;; (macroexpand-1 '(remove-from-candidates list-of-points rest-of-candidates))
 
-  (defun save-packflag (filepath par-packflag par-packline y-size x-size channels bit-depth)
-    (let ((new (re-conv-8x8 par-packflag par-packline y-size x-size channels bit-depth)))
+  (defun save-packflag (filepath par-packflag par-packline y-size x-size channels bit-depth &optional img)
+    (let ((new (re-conv-8x8 par-packflag par-packline y-size x-size channels bit-depth img)))
       (with-open-file (output filepath :element-type '(unsigned-byte 8)
                                        :direction :output :if-exists :supersede)
         (png:encode new output))))
+
 
   ;; launcher
 
@@ -1765,6 +1778,7 @@ Implemenation
                                                           :element-type '(unsigned-byte 8)
                                                           :initial-element 0)))
                            (format t "y-dif:~A x-dif:~A ~%" y-dif x-dif)
+                           ;; Окраска точек для визуализации
                            (plot-points packflag cur-fill -1000)
                            (plot-points packflag cur-edge -999)
                            ;; (dbgout-array rest-of-candidates)
@@ -1782,20 +1796,22 @@ Implemenation
                                      (setf (aref new-packflag yy xx) old-pkf-pnt)
                                      (setf (aref new-packflag yy xx) 0)))))
                            (save-packflag (format nil "~A/~A.png" dir filename)
-                                          new-packflag new-packline (ash y-dif 3) (ash x-dif 3)
-                                          channels bit-depth)
+                                          new-packflag packline (ash y-dif 3) (ash x-dif 3)
+                                          channels bit-depth img)
+                           ;; Сохраняем найденное
                            (push cur-edge edges)
                            (push cur-fill fills)
+                           ;; Удаляем из списка кандидатов все точки обнаруженного
+                           ;; края фигуры (cur-edge). Так как по определению края ищутся
+                           ;; начиная с каждой точки-кандидата было бы избыточно удалять
+                           ;; из кандидатов все точки заливки (cur-full)
                            (remove-from-candidates cur-edge rest-of-candidates)
-                           ;; (remove-from-candidates cur-fill rest-of-candidates)
-                           ;; (plot-points packflag cur-fill -999)
-                           ;; (plot-points packflag cur-edge -1000)
                            ;; save pic
                            (save-packflag (format nil "~A/~A.png" dir2 filename)
                                           packflag packline height width
                                           channels bit-depth)
                            ;; (print (length rest-of-candidates))
-                           ;; ;; Хвостовая рекурсия
+                           ;; Хвостовая рекурсия
                            (rec-elim rest-of-candidates)))))
             ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
             ;; оставшихся кандидатов тех, что совпадают с найденными краями
