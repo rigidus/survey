@@ -1176,10 +1176,9 @@ How to make screenshot:
                              (= 0 (logand xx1 #b111))))
                     255
                     ;; else
-                    (aref packline yy3 xx3 zz)
+                    (aref new yy1 xx1 zz)
                     )))
             (when (not (= 0 bb6))
-              (print (list yy4 xx4))
               (rgb-times
                 (if (and (= 2 zz)
                          (or (= (logand yy1 #b111) (logand xx1 #b111))
@@ -1187,7 +1186,7 @@ How to make screenshot:
                              (= 0 (logand xx1 #b111))))
                     255
                     ;; else
-                    (aref packline yy3 xx3 zz)
+                    (aref new yy1 xx1 zz)
                     ))))))
       new))
 
@@ -1315,6 +1314,7 @@ Implemenation
     (forward-side cur-pnt (rotate-left direction) height width))
 
   (defun edge-8x8 (cur-pnt height width packflag)
+    ;; packflag not mutable in this functuin
     (let ((entry-point cur-pnt)        ;; сохраняем начальную точку
           (stack '())                  ;; создаем пустой стек
           (direction 'to-right))       ;; задаем начальное направление
@@ -1454,7 +1454,7 @@ Implemenation
     `(satisfies pnt-or-nil-p))
 
 
-  (defun fill-8x8 (cur-pnt height width packflag fill-color &optional ret-flag)
+  (defun fill-8x8 (cur-pnt height width packflag fill-mask &optional ret-flag)
     (declare (optimize (speed 3) (safety 0) (debug 0)))
     (declare (type fixnum width) (type fixnum height))
     (let ((stk (list (make-pnt :yy (car cur-pnt) ;; Поместим первую точку в стек
@@ -1465,18 +1465,30 @@ Implemenation
       (labels ((set-last-right (cur-y x-pnt)
                  (setf last-right (make-pnt :yy cur-y :xx x-pnt)))
                (enq (elt)
-                 (push elt stk)) ;; alter: (setf stk (append stk (list elt)))
+                 (push elt stk))
                (deq ()
                  (pop stk))
                (fg-pp (yy xx)
                  (declare (type fixnum yy) (type fixnum yy)
                           (ftype (function (fixnum fixnum) fixnum) fg-pp))
                  (and (>= yy 0)
-                        (>= xx 0)
-                        (< yy height)
-                        (< xx width)
-                        (not (= 0 (aref packflag yy xx))))))
-        (declare (inline set-last-right) (inline enq) (inline deq) (inline fg-pp))
+                      (>= xx 0)
+                      (< yy height)
+                      (< xx width)
+                      (not (= 0 (aref packflag yy xx)))))
+               (set-fill (cur-y x-pnt)
+                 (declare (type fixnum cur-y) (type fixnum x-pnt)
+                          (ftype (function (fixnum fixnum)) set-fill))
+                 (setf (aref packflag cur-y x-pnt)
+                       (logior fill-mask
+                               (aref packflag cur-y x-pnt))))
+               (fill-p (cur-y x-pnt)
+                 (declare (type fixnum cur-y) (type fixnum x-pnt)
+                          (ftype (function (fixnum fixnum)) fill-p))
+                 (not (= 0 (logand fill-mask
+                                   (aref packflag cur-y x-pnt))))))
+        (declare (inline set-last-right) (inline enq) (inline deq) (inline fg-pp)
+                 (inline set-fill) (inline fill-p))
         (loop for cur-pnt = (deq) then (deq) always cur-pnt do
           (let ((cur-y (pnt-yy cur-pnt))
                 (cur-x (pnt-xx cur-pnt)))
@@ -1493,7 +1505,6 @@ Implemenation
               ;; (format t "идем по строке влево ~%")
               (loop always (fg-pp cur-y (- x-left 1)) do
                 ;; закрасить текущую точку (закрасим позже в цикле по строке)
-                ;; (setf (aref packflag cur-y x-right) fill-color)
                 ;; fg-тест пройден, теперь можно сдвинуть координату X-LEFT влево
                 (decf x-left))
               ;; Теперь у нас есть x-left
@@ -1504,7 +1515,6 @@ Implemenation
               ;; (format t "идем по строке вправо ~%")
               (loop always (fg-pp cur-y (+ x-right 1)) do
                 ;; закрасить текущую точку (закрасим позже в цикле по строке)
-                ;; (setf (aref packflag cur-y x-right) fill-color)
                 ;; fg-тест пройден, теперь можно сдвинуть координату X-RIGHT вправо
                 (incf x-right))
               ;; Теперь у нас есть x-right
@@ -1515,11 +1525,11 @@ Implemenation
               ;;         cur-y x-left x-right)
               (if ret-flag
                   (loop for x-pnt from x-left to x-right do
-                    (setf (aref packflag cur-y x-pnt) fill-color)
+                    (set-fill cur-y x-pnt)
                     (push (cons cur-y x-pnt) res))
                   ;; else
                   (loop for x-pnt from x-left to x-right do
-                    (setf (aref packflag cur-y x-pnt) fill-color)))
+                    (set-fill cur-y x-pnt)))
               ;;
               ;; (format t "закрашены пиксели в строке ~A:" cur-y)
               ;; (print packflag)
@@ -1536,8 +1546,7 @@ Implemenation
                       always (< cur-y height)
                       do (let* ((cur-fg (fg-pp cur-y x-pnt))
                                 (prv-fg (fg-pp cur-y (- x-pnt 1)))
-                                (cur-clr (when cur-fg (equal fill-color
-                                                             (aref packflag cur-y x-pnt)))))
+                                (cur-clr (when cur-fg (fill-p cur-y x-pnt))))
                            ;; (format t "low-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
                            ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
                            (cond
@@ -1597,8 +1606,7 @@ Implemenation
                       always (> cur-y 0)
                       do (let* ((cur-fg (fg-pp cur-y x-pnt))
                                 (prv-fg (fg-pp cur-y (- x-pnt 1)))
-                                (cur-clr (when cur-fg (equal fill-color
-                                                             (aref packflag cur-y x-pnt)))))
+                                (cur-clr (when cur-fg (fill-p cur-y x-pnt))))
                            ;; (format t "high-str pnt (~A . ~A) ; fg: ~A ; clr: ~A ; prev: ~A~%"
                            ;;         cur-y x-pnt cur-fg cur-clr prv-fg)
                            (cond
@@ -1658,7 +1666,6 @@ Implemenation
           ;; else
           (values))))
 
-
   (defun not-so-simple-test ()
     (format t "~%~%")
     (let* ((packflag
@@ -1676,15 +1683,15 @@ Implemenation
            (width  (array-dimension packflag 1))
            (exp-res
              (alexandria:copy-array
-              #2A((0 0 0 0 0 1 1 0 0 1 1)
-                  (0 2 2 2 0 0 0 0 0 1 1)
-                  (0 2 2 2 0 0 2 2 0 0 0)
-                  (0 2 0 2 0 0 2 2 2 2 0)
-                  (2 2 0 2 2 2 2 0 0 2 2)
-                  (0 2 2 2 0 0 0 0 0 2 2)
-                  (0 0 0 0 0 2 2 0 0 0 2)
-                  (1 0 0 0 0 2 2 2 2 2 2))))
-           (points (fill-8x8 start-point height width packflag 2 t))
+              #2A((0   0   0   0   0   1   1   0   0   1   1)
+                  (0   129 129 129 0   0   0   0   0   1   1)
+                  (0   129 129 129 0   0   129 129 0   0   0)
+                  (0   129 0   129 0   0   129 129 129 129 0)
+                  (129 129 0   129 129 129 129 0   0   129 129)
+                  (0   129 129 129 0   0   0   0   0   129 129)
+                  (0   0   0   0   0   129 129 0   0   0   129)
+                  (1   0   0   0   0   129 129 129 129 129 129))))
+           (points (fill-8x8 start-point height width packflag #b10000000 t))
            (result (if (equalp packflag exp-res)
                        (progn
                          (format t "::= Test passed.~%")
@@ -1747,7 +1754,8 @@ Implemenation
     (let ((format-str (concatenate 'string "~%~%len " (symbol-name name) " : ~A")))
       `(progn
          (format t ,format-str (length ,name))
-         (print ,name))))
+         (print ,name)
+         (format t "~%"))))
 
   ;; (macroexpand-1 '(dbgout-array rest-of-candidates))
 
@@ -1779,29 +1787,24 @@ Implemenation
   ;; launcher
 
   (defun launcher ()
-    (let ((img (with-open-file (input "incall.png" :element-type '(unsigned-byte 8))
+    (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
                  (png:decode input)))
-          (dir  (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym)))))
-          (dir2 (ensure-directories-exist (format nil "./~A_/" (symbol-name (gensym))))))
+          (dir  (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym)))))
+          ;; (dir_ (ensure-directories-exist (format nil "./~A_/" (symbol-name (gensym)))))
+          )
       (multiple-value-bind (packflag packline height width channels bit-depth)
           (conv-8x8 img)
         (let ((pf-height (ash height -3))
-              (pf-width  (ash width  -3))
-              (packflag-fills (alexandria:copy-array packflag))
-              (packflag-edges (alexandria:copy-array packflag))
-              (fills)
-              (edges))
+              (pf-width  (ash width  -3)))
           (labels ((rec-elim (candidates)
-                     ;; Ищем edges
                      (if (null candidates)
                          (values)
                          ;; else
                          (let* ((candidate (car candidates))
                                 (rest-of-candidates (cdr candidates))
-                                (cur-fill
-                                  (fill-8x8 candidate pf-height pf-width packflag-fills -999 t))
-                                (cur-edge
-                                  (edge-8x8 candidate pf-height pf-width packflag-edges))
+                                (cur-fill ;; в процесе заливки сам расставляет признаки
+                                  (fill-8x8 candidate pf-height pf-width packflag #b10000000 t))
+                                (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
                                 (filename  (symbol-name (gensym)))
                                 (ys (mapcar #'car cur-edge))
                                 (xs (mapcar #'cdr cur-edge))
@@ -1809,47 +1812,67 @@ Implemenation
                                 (x-min (reduce #'min xs))
                                 (y-max (reduce #'max ys))
                                 (x-max (reduce #'max xs))
-                                (y-dif (+ 1 (- y-max y-min)))
-                                (x-dif (+ 1 (- x-max x-min)))
-                                (new-packflag (make-array `(,pf-height ,pf-width)
-                                                          :element-type 'fixnum
-                                                          :initial-element 0))
-                                (new-packline (make-array `(,pf-height ,pf-width ,channels)
-                                                          :element-type '(unsigned-byte 8)
-                                                          :initial-element 0)))
-                           (format t "y-dif:~A x-dif:~A ~%" y-dif x-dif)
+                                (y-size (+ 1 (- y-max y-min)))
+                                (x-size (+ 1 (- x-max x-min)))
+                                (new-packflag
+                                  (make-array `(,pf-height ,pf-width)
+                                              :element-type 'fixnum :initial-element 0))
+                                (new-packline
+                                  (make-array `(,pf-height ,pf-width ,channels)
+                                              :element-type '(unsigned-byte 8)
+                                              :initial-element 0))
+                                (new-img  (png:make-image (ash y-size 3) (ash x-size 3)
+                                                          channels bit-depth)))
+                           (format t "y-size:~A x-size:~A ~%" y-size x-size)
                            ;; Окраска точек для визуализации
-                           (plot-points packflag cur-fill #b10000000)
-                           (plot-points packflag cur-edge #b01000000)
-                           ;; (dbgout-array rest-of-candidates)
-                           ;; (dbgout-array cur-edge)
                            ;; (dbgout-array cur-fill)
+                           ;; (plot-points packflag cur-fill #b10000000) ;; не надо, уже окрашено
+                           (plot-points packflag cur-edge #b01000000)
+                           ;; new-packflag, new-packline
                            (do* ((yy 0  (+ 1 yy)))
-                                ((>= yy y-dif))
+                                ((>= yy y-size))
                              (declare (type fixnum yy))
                              (do* ((xx 0  (+ 1 xx)))
-                                  ((>= xx x-dif))
+                                  ((>= xx x-size))
                                (declare (type fixnum xx))
-                               (let ((old-pkf-pnt (aref packflag (+ yy y-min) (+ xx x-min))))
-                                 (declare (type fixnum old-pkf-pnt))
-                                 (if old-pkf-pnt
-                                     (setf (aref new-packflag yy xx) old-pkf-pnt)
-                                     (setf (aref new-packflag yy xx) 0)))))
+                               (setf (aref new-packflag yy xx)
+                                     (aref packflag (+ yy y-min) (+ xx x-min)))
+                               (dotimes (zz channels)
+                                 (setf (aref new-packline yy xx zz)
+                                       (aref packline (+ yy y-min) (+ xx x-min) zz)))))
+                           ;; new-img
+                           (let ((y-start (ash y-min 3))
+                                 (x-start (ash x-min 3)))
+                             (do* ((yy 0  (+ 1 yy)))
+                                  ((>= yy (ash y-size 3)))
+                               (declare (type fixnum yy))
+                               (do* ((xx 0 (+ 1 xx)))
+                                    ((>= xx (ash x-size 3)))
+                                 (declare (type fixnum xx))
+                                 (dotimes (zz channels)
+                                   (setf (aref new-img yy xx zz)
+                                         (aref img
+                                               (+ yy y-start)
+                                               (+ xx x-start)
+                                               zz))))))
+                           ;; save img
+                           ;; (with-open-file
+                           ;;     (output (format nil "~A/~A.png" dir (gensym))
+                           ;;             :element-type '(unsigned-byte 8)
+                           ;;             :direction :output :if-exists :supersede)
+                           ;;   (png:encode new-img output))
+                           ;; save pic
                            (save-packflag (format nil "~A/~A.png" dir filename)
-                                          new-packflag packline (ash y-dif 3) (ash x-dif 3)
-                                          channels bit-depth img)
-                           ;; Сохраняем найденное
-                           (push cur-edge edges)
-                           (push cur-fill fills)
+                                          new-packflag new-packline (ash y-size 3) (ash x-size 3)
+                                          channels bit-depth new-img)
+                           ;; (save-packflag (format nil "~A/~A.png" dir_ filename)
+                           ;;                packflag packline height width
+                           ;;                channels bit-depth img)
                            ;; Удаляем из списка кандидатов все точки обнаруженного
                            ;; края фигуры (cur-edge). Так как по определению края ищутся
                            ;; начиная с каждой точки-кандидата было бы избыточно удалять
                            ;; из кандидатов все точки заливки (cur-full)
                            (remove-from-candidates cur-edge rest-of-candidates)
-                           ;; save pic
-                           (save-packflag (format nil "~A/~A.png" dir2 filename)
-                                          packflag packline height width
-                                          channels bit-depth)
                            ;; (print (length rest-of-candidates))
                            ;; Хвостовая рекурсия
                            (rec-elim rest-of-candidates)))))
@@ -1861,25 +1884,13 @@ Implemenation
           ;; (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
           ;;                                           edges)))
           ;; dbgout: Количество фигур
-          (format t "~%len edges : ~A ~%" (length edges))
-          ;; Заполняем с выводом кол-в фигур
-          (loop for cur-fill in fills
-                for cur-edge in edges
-                do
-                   ;; (format t "ss:~A ~T lcf:~A ~T ~A%~%" ss lcf dev)
-                   (plot-points packflag cur-fill -1000)
-                   (plot-points packflag cur-edge -999))
+          ;; (format t "~%len edges : ~A ~%" (length edges))
           ;; Выводим картинки
-          (let ((new (re-conv-8x8 packflag packline height width
-                                  channels bit-depth
-                                  ;; img
-                                  ))
-                (filename  (symbol-name (gensym))))
-            (with-open-file
-                (output (format nil "~A/~A.png" dir filename)
-                        :element-type '(unsigned-byte 8)
-                        :direction :output :if-exists :supersede)
-              (png:encode new output)))))))
+          ;; (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
+          ;;                packflag packline height width
+          ;;                channels bit-depth img)
+          ;;
+          ))))
 
   (time
    (launcher))
