@@ -986,11 +986,25 @@ How to make screenshot:
    :path "x-snapshot-true-color-telegram.png")
 #+END_SRC
 
-* Conv8x8 and ReConv8x8
+* Conv8x8
 
-После создания скриншота нам нужно уменьшить его до минимального размера (например, для передачи по сети, если это необходимо).
+Мы можем разбить скриншот на квадраты 8*8 пикселей. Большинство из таких квадратов будут содержать один цвет - мы предполагаем что такие квадраты содержат цвет фона. Они нам не интересны, т.к. вероятно, что они не содержат полезной текстовой информации. Поэтому было бы логично иметь для каждого квадрата флаг, который показывает, заполнен ли этот квадрат одним цветом.
 
-Для этого мы можем разбить скриншот на квадраты 8*8 пикселей. Большинство из таких квадратов будут содержать один цвет - мы предполагаем что такие квадраты содержа цвет фона. Они нам не интересны, т.к. мы предполагаем, что они не содержат полезной текстовой информации.
+Сколько будет занимать места такой массив в сравнении с исходным изображением? В исходном изображении на каждый 8x8-квадрат требуется (* 8 8 3) =192 байта, против одного бита. Так как в байте 8 бит, то для массив флагов 8x8-квадратов будет в (* 8 8 3 8) =1536 раз меньше чем исходное полноцветное изображение. Поэтому такой массив называется ~packflag~.
+
+Дополнительно к нему нам нужем массив ~packline~, который хранит цвет 8x8-квадрата, при этом мы можем вместо (* 3 8) байтов на цвет ограничиться одним байтом, отбросив младшие биты каждого бита цвета и упаковав их в один байт.
+
+Такая схема дает нам экономию в (+ (* 8 8 3 8) (* 8 8)) =1600 раз по сравнению с оригинальым изображением. При этом мы жертвуем частью информации о цвете и деталях картинки. Это подходит для того чтобы, например, быстро передать thumbnail по сети.
+
+Но работа с битовыми полями байтов требует времени, поэтому, чтобы сохранить скорость обработки, мы можем не заходить так далеко. Мы можем ограничиться массивом байт вместо массива бит для ~packflag~ и трехбайтовыми значениями цвета для ~packline~.
+
+Это даст нам возможность на следующих этапах не обрабатывать 8x8-квадраты которые залиты одним цветом, что тоже даст экономию по скорости.
+
+Раз уж теперь в связи с вышеизложенным у нас каждый элемент ~packflag~ - это байт а не бит, то мы можем практически бесплатно добавить в него информацию о том, на каком пикселе 8x8-квадрата мы обраружили что цвет изменился. Это значение не может быть равно 0, т.к. нулевой пиксель определяет с каким цветом мы будем сравнивать все остальные, чтобы определить залит ли 8x8-квадрат одним цветом. Так как кроме нулевого в 8x8-квадрате всего 63 пикселя, то для размещения позиции изменения цвета нам нужно лишь 6 бит и еще 2 остаются вакантными - они нам понадобятся когда мы дойдем до процесса поиска краев фигур [[*Edge detector][Edge detector]].
+
+С этой дополнительной информацией мы можем заливать цветом фона только часть 8x8-квадрата, который не полностью залит одним цветом, и оставляя остаток незалитым, что позволяет нам не только немного увеличить детализацию, но и ускорить процесс отрисовки (re-conv-8x8).
+
+Краткое резюме для имплементации:
 
 Чтобы алгоритм был cache-friendly мы проходим массив пикселей строка за строкой обновляя массивы ~packflag~ и ~packline~. Каждый элемент массива ~packflag~ содержит 0 если цвет не менялся. Если же цвет менялся - то этот элемент содержит число от 1 до 64, которое представляет собой относительный порядковый номер пикселя в квадрате 8*8, где было обнаружено изменение цвета. Элементы массива ~packline~, содержащат цвет всего квадрата 8*8, если цвет не менялся или цвет тех первых точек квадрата до изменения цвета, если считать от левого верхнего угла квадрата.
 
@@ -1072,7 +1086,7 @@ How to make screenshot:
                               (progn
                                 ;; (pin yy1 xx1 157 157 0) ;; ~~~~~~~ DARK-YELLOW
                                 (setf (aref packflag yy3 xx3)
-                                      (+ (ash (logand yy1 7) 3)
+                                      (+ (ash (logand yy1 7) 3) ;; [bits:00yyyxxx]
                                          (logand xx1 7))))))
                         ;; Если мы здесь, то цвет не поменялся после проверки текущего
                         ;; пикселя - тут мы пока не делаем ничего
@@ -1082,14 +1096,30 @@ How to make screenshot:
         )  ;; end of do-cycle for y
       (values
        packflag packline height width channels bit-depth)))
+#+END_SRC
+
+
+
+
+#+NAME: re_conv_8x8
+#+BEGIN_SRC lisp
+  (defmacro light-packline-color ()
+    `(logior #b10000000
+             (aref packline yy3 xx3 zz)))
+
+  (defmacro rgb-times (&body body)
+    `(dotimes (zz channels)
+       (setf (aref new yy1 xx1 zz)
+             ,@body)))
+
+  ;; (macroexpand-1 '(rgb-times (light-packline-color)))
 
 
   (defun re-conv-8x8 (packflag packline height width channels bit-depth &optional old)
     (declare (optimize (speed 3))
              (optimize (safety 0)))
     (let* ((new        (png:make-image height width channels bit-depth)))
-      ;; Это отладочная часть, чтобы посмотреть на результаты компактификации
-      ;; Она восстанавливает информацию из packflag и packline
+      ;; Восстанавливаем информацию из packflag и packline
       (do* ((yy1      0  (+ 1 yy1))
             (yy-8-p   0  (logand yy1 7))
             (yy3      0  (ash yy1 -3)))
@@ -1101,55 +1131,64 @@ How to make screenshot:
              ((>= xx1 width))
           (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
           (let* ((packflag (aref packflag yy3 xx3))
-                 (yy4 (ash packflag -3))
-                 (xx4 (logand packflag 7)))
-            (unless (= 0 packflag) ;; partially block
-              (if (null old)
-                  (progn ;; filled part
-                    (if (> 0 packflag) ;; negative
-                        (if (= -999 packflag)
-                            ;; (dotimes (zz channels)
-                            ;;   (setf (aref new yy1 xx1 zz)
-                            ;;         200
-                            ;;         ;; (logior #b10000000
-                            ;;         ;; (aref packline yy3 xx3 zz)
-                            ;;         ;; )
-                            ;;         ))
-                            (progn
-                              (setf (aref new yy1 xx1 0) 255)
-                              (setf (aref new yy1 xx1 1) 0)
-                              (setf (aref new yy1 xx1 2) 0))
-                            ;; else
-                            (progn
-                              (setf (aref new yy1 xx1 0) 0)
-                              (setf (aref new yy1 xx1 1) 255)
-                              (setf (aref new yy1 xx1 2) 0)))
-                        ;; else
-                        (dotimes (zz channels)
-                          (setf (aref new yy1 xx1 zz)
-                                100
-                                ;; (logior #b10000000
-                                ;; (aref packline yy3 xx3 zz)
-                                ;; )
-                                ))))
-                  ;; else
-                  (if (and (< yy1 (+ yy4 (logand yy1 -8)))
-                           (< xx3 (+ xx4 (logand xx1 -8))))
-                      (progn ;; filled part
-                        (dotimes (zz channels)
-                          (setf (aref new yy1 xx1 zz)
-                                127
-                                ;; (logior #b10000000
-                                ;;         (aref packline yy3 xx3 zz))
-                                ))
-                        )
-                      ;; else - rest part
-                      (dotimes (zz channels)
-                        (setf (aref new yy1 xx1 zz)
-                              (logand 255
-                                      ;; we need only 1 bit for channel
-                                      (logior #b01111111
-                                              (aref old yy1 xx1 zz)))))))))))
+                 (bb7 (logand #b10000000 packflag))
+                 (bb6 (logand #b01000000 packflag))
+                 (b_5 (logand #b00111111 packflag))
+                 (yy4 (ash b_5 -3))
+                 (xx4 (logand b_5 #b111))
+                 (y-chg (+ yy4 (logand yy1 -8)))  ;; Y изменения цвета
+                 (x-chg (+ xx4 (logand xx1 -8)))) ;; X изменения цвета
+            (if (= 0 b_5)
+                ;; 8x8-квадрат залит полностью - выведем его цвет с
+                ;; дитерингом осветляя каждый второй пиксель, чтобы
+                ;; показать что это фон и получить масштабную сетку
+                (rgb-times
+                  (if (or (not (= 0 (logand yy1 #b010)))
+                          (not (= 0 (logand xx1 #b010))))
+                      (aref packline yy3 xx3 zz)
+                      ;; else
+                      (logand 255 (+ 20 (aref packline yy3 xx3 zz)))))
+                ;; else: 8x8-квадрат не залит полностью
+                (if (and (< yy1 y-chg)
+                         (< xx3 x-chg))
+                    ;; заливаем первые пиксели цветом из packline
+                    (progn ;; filled part
+                      (rgb-times
+                        (aref packline yy3 xx3 zz)))
+                    ;; else: а остальные
+                    ;; пропускаем если у нас нет исходного изображения,
+                    ;; иначе берем пиксели из исходника, но обнуляем
+                    ;; их младшие биты, чтобы цвет остальных пикселей
+                    ;; отличался от того что мы взяли из packline для
+                    ;; залитого участка квадрата
+                    (when old
+                      (rgb-times
+                        (logand 255
+                                ;; we need only 1 bit for channel
+                                (logior #b00011111
+                                        (aref old yy1 xx1 zz)))))))
+            ;; Особые случаи: Если у нас есть флаги bb7 и bb6
+            (when (not (= 0 bb7))
+              (rgb-times
+                (if (and (= 1 zz)
+                         (or (= (logand yy1 #b111) (logand xx1 #b111))
+                             (= 0 (logand yy1 #b111))
+                             (= 0 (logand xx1 #b111))))
+                    255
+                    ;; else
+                    (aref packline yy3 xx3 zz)
+                    )))
+            (when (not (= 0 bb6))
+              (print (list yy4 xx4))
+              (rgb-times
+                (if (and (= 2 zz)
+                         (or (= (logand yy1 #b111) (logand xx1 #b111))
+                             (= 0 (logand yy1 #b111))
+                             (= 0 (logand xx1 #b111))))
+                    255
+                    ;; else
+                    (aref packline yy3 xx3 zz)
+                    ))))))
       new))
 
   ;; launcher
@@ -1174,12 +1213,11 @@ How to make screenshot:
                               img
                               )))
         (with-open-file
-            (output "copy1.png"
+            (output "copy3.png"
                     :element-type '(unsigned-byte 8)
                     :direction :output :if-exists :supersede)
           (png:encode new output)))
       ))
-
 #+END_SRC
 
 * Edge detector
@@ -1714,11 +1752,13 @@ Implemenation
   ;; (macroexpand-1 '(dbgout-array rest-of-candidates))
 
 
-  (defmacro plot-points (packflag list-of-points color)
+  (defmacro plot-points (packflag list-of-points mask)
     `(loop for (yy . xx) in ,list-of-points do
-      (setf (aref ,packflag yy xx) ,color)))
+      (setf (aref ,packflag yy xx)
+            (logior ,mask
+                    (aref ,packflag yy xx)))))
 
-  ;; (macroexpand-1 '(plot-points packflag cur-edge -999))
+  ;; (macroexpand-1 '(plot-points packflag cur-edge #b01000000))
 
 
   (defmacro remove-from-candidates (list-of-points rest-of-candidates)
@@ -1779,8 +1819,8 @@ Implemenation
                                                           :initial-element 0)))
                            (format t "y-dif:~A x-dif:~A ~%" y-dif x-dif)
                            ;; Окраска точек для визуализации
-                           (plot-points packflag cur-fill -1000)
-                           (plot-points packflag cur-edge -999)
+                           (plot-points packflag cur-fill #b10000000)
+                           (plot-points packflag cur-edge #b01000000)
                            ;; (dbgout-array rest-of-candidates)
                            ;; (dbgout-array cur-edge)
                            ;; (dbgout-array cur-fill)
@@ -1843,9 +1883,13 @@ Implemenation
 
   (time
    (launcher))
-#+END_SRC
 
-[TODO:gmm] - Перенести найденное в файлы и отправить в тессеракт
+  ;; TODO:
+  ;; Разобраться как conv-8x8 возвращает данные
+  ;; понять как их восстановить для отправки в тессеракт
+  ;; отправить в тессеракт
+  ;; получить распознанные блоки и их координаты
+#+END_SRC
 
 * Tesseract
 
@@ -2207,6 +2251,8 @@ http://algolist.ru/graphics/fill.php
 
 #+BEGIN_SRC lisp :tangle ./run.lisp :noweb yes :exports code
   <<conv_8x8>>
+
+  <<re_conv_8x8>>
 
   <<edge_8x8>>
 
