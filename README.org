@@ -1478,7 +1478,7 @@ Implemenation
           (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
                   expected-result result))))
 
-  (simple-test)
+  ;; (simple-test)
 
   (defun complex-test ()
     (let* ((packflag #2A((0 0 0 0 0 0 0)
@@ -1492,13 +1492,23 @@ Implemenation
            (start-point (cons 1 1))
            (height 10)
            (width 10)
-           (expected-result '((1 . 1) (2 . 1) (2 . 2) (2 . 3) (1 . 3) (1 . 4) (1 . 5)
-                              (2 . 5) (3 . 5) (4 . 5) (4 . 4) (5 . 4) (6 . 4) (6 . 3)
-                              (5 . 3) (5 . 2) (4 . 2) (3 . 2) (2 . 2) (2 . 1)))
+           (expected-result
+             (list
+              #S(EDGE-PNT :Y 1 :X 1 :D :TD) #S(EDGE-PNT :Y 2 :X 1 :D :TR)
+              #S(EDGE-PNT :Y 2 :X 2 :D :TR) #S(EDGE-PNT :Y 2 :X 3 :D :TU)
+              #S(EDGE-PNT :Y 1 :X 3 :D :TR) #S(EDGE-PNT :Y 1 :X 4 :D :TR)
+              #S(EDGE-PNT :Y 1 :X 5 :D :TD) #S(EDGE-PNT :Y 2 :X 5 :D :TD)
+              #S(EDGE-PNT :Y 3 :X 5 :D :TD) #S(EDGE-PNT :Y 4 :X 5 :D :TL)
+              #S(EDGE-PNT :Y 4 :X 4 :D :TD) #S(EDGE-PNT :Y 5 :X 4 :D :TD)
+              #S(EDGE-PNT :Y 6 :X 4 :D :TL) #S(EDGE-PNT :Y 6 :X 3 :D :TU)
+              #S(EDGE-PNT :Y 5 :X 3 :D :TL) #S(EDGE-PNT :Y 5 :X 2 :D :TU)
+              #S(EDGE-PNT :Y 4 :X 2 :D :TU) #S(EDGE-PNT :Y 3 :X 2 :D :TU)
+              #S(EDGE-PNT :Y 2 :X 2 :D :TL) #S(EDGE-PNT :Y 2 :X 1 :D :TU)))
            (result (edge-8x8 start-point height width packflag)))
       (if (equalp result expected-result)
           (format t ":: Test passed.")
-          (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
+          (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
+                  expected-result result))))
 
   ;; (complex-test)
 
@@ -1511,13 +1521,21 @@ Implemenation
            (start-point (cons 0 0))
            (height 5)
            (width 4)
-           (expected-result '((0 . 0) (0 . 1) (0 . 2) (1 . 2) (1 . 3) (2 . 3) (2 . 2)
-                              (3 . 2) (4 . 2) (4 . 1) (3 . 1) (3 . 0) (2 . 0) (2 . 1)
-                              (1 . 1) (0 . 1)))
+           (expected-result
+             (list
+              #S(EDGE-PNT :Y 0 :X 0 :D :TR) #S(EDGE-PNT :Y 0 :X 1 :D :TR)
+              #S(EDGE-PNT :Y 0 :X 2 :D :TD) #S(EDGE-PNT :Y 1 :X 2 :D :TR)
+              #S(EDGE-PNT :Y 1 :X 3 :D :TD) #S(EDGE-PNT :Y 2 :X 3 :D :TL)
+              #S(EDGE-PNT :Y 2 :X 2 :D :TD) #S(EDGE-PNT :Y 3 :X 2 :D :TD)
+              #S(EDGE-PNT :Y 4 :X 2 :D :TL) #S(EDGE-PNT :Y 4 :X 1 :D :TU)
+              #S(EDGE-PNT :Y 3 :X 1 :D :TL) #S(EDGE-PNT :Y 3 :X 0 :D :TU)
+              #S(EDGE-PNT :Y 2 :X 0 :D :TR) #S(EDGE-PNT :Y 2 :X 1 :D :TU)
+              #S(EDGE-PNT :Y 1 :X 1 :D :TU) #S(EDGE-PNT :Y 0 :X 1 :D :TL)))
            (result (edge-8x8 start-point height width packflag)))
       (if (equalp result expected-result)
           (format t ":: Test passed.")
-          (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
+          (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
+                  expected-result result))))
 
   ;; (border-test)
 #+END_SRC
