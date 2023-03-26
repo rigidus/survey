@@ -1252,7 +1252,8 @@ How to make screenshot:
                           (not (= 0 (logand xx1 #b010))))
                       (aref packline yy3 xx3 zz)
                       ;; else
-                      (logand 255 (+ 20 (aref packline yy3 xx3 zz)))))
+                      (logand 255 (+ 20 (aref packline yy3 xx3 zz))))
+                  )
                 ;; else: 8x8-квадрат не залит полностью
                 (if (and (< yy1 y-chg)
                          (< xx3 x-chg))
@@ -1292,7 +1293,8 @@ How to make screenshot:
                     255
                     ;; else
                     (aref new yy1 xx1 zz)
-                    ))))))
+                    )))
+            )))
       new))
 #+END_SRC
 
@@ -1343,17 +1345,24 @@ Implemenation
 
 #+NAME: edge_8x8
 #+BEGIN_SRC lisp
+  (deftype direction () '(member :to-right :to-up :to-left :to-down))
+
+  (defstruct edge-pnt
+    (yy 0 :type fixnum)
+    (xx 0 :type fixnum)
+    (dir :to-right :type direction))
+
   (defun rotate-left (direction)
-    (cond ((equal 'to-right direction) 'to-up)
-          ((equal 'to-up direction) 'to-left)
-          ((equal 'to-left direction) 'to-down)
-          ((equal 'to-down direction) 'to-right)))
+    (cond ((equal :to-right direction) :to-up)
+          ((equal :to-up direction) :to-left)
+          ((equal :to-left direction) :to-down)
+          ((equal :to-down direction) :to-right)))
 
   (defun rotate-right (direction)
-    (cond ((equal 'to-right direction) 'to-down)
-          ((equal 'to-up direction) 'to-right)
-          ((equal 'to-left direction) 'to-up)
-          ((equal 'to-down direction) 'to-left)))
+    (cond ((equal :to-right direction) :to-down)
+          ((equal :to-up direction) :to-right)
+          ((equal :to-left direction) :to-up)
+          ((equal :to-down direction) :to-left)))
 
   ;; Y-координата идет в CUR-PNT первой
   ;; -1 means to low
@@ -1362,21 +1371,18 @@ Implemenation
     (destructuring-bind (yy . xx)
         cur-pnt
       (destructuring-bind (yyy . xxx)
-          (cond ((equal 'to-right direction)
-                 (cons yy (+ xx 1)))
-                ((equal 'to-up direction)
-                 (cons (- yy 1) xx))
-                ((equal 'to-left direction)
-                 (cons yy (- xx 1)))
-                ((equal 'to-down direction)
-                 (cons (+ yy 1) xx)))
+          (ecase direction
+            (:to-right (cons yy (+ xx 1)))
+            (:to-up    (cons (- yy 1) xx))
+            (:to-left  (cons yy (- xx 1)))
+            (:to-down  (cons (+ yy 1) xx)))
         (when (< yyy 0)       (setf yyy -1))
         (when (< xxx 0)       (setf xxx -1))
         (when (> yyy height)  (setf yyy -2))
         (when (> xxx width)   (setf xxx -2))
         (cons yyy xxx))))
 
-  ;; (forward-side-pnt-coords (cons 202 3) 'to-down 200 300)
+  ;; (forward-side-pnt-coords (cons 202 3) :to-down 200 300)
 
   (defun fg-p (cur-pnt packflag height width)
     (destructuring-bind (yy . xx)
@@ -1390,11 +1396,13 @@ Implemenation
   (defun left-side (cur-pnt direction height width)
     (forward-side cur-pnt (rotate-left direction) height width))
 
+
+
   (defun edge-8x8 (cur-pnt height width packflag)
     ;; packflag not mutable in this functuin
     (let ((entry-point cur-pnt)        ;; сохраняем начальную точку
           (stack '())                  ;; создаем пустой стек
-          (direction 'to-right))       ;; задаем начальное направление
+          (direction :to-right))       ;; задаем начальное направление
       (labels ((f ()
                  (push cur-pnt stack)
                  (setf cur-pnt (forward-side cur-pnt direction height width))
@@ -1843,19 +1851,6 @@ Implemenation
 
   ;; launcher
 
-  (defstruct fig
-    (fill nil)
-    (edge nil)
-    (filename "")
-    (y-min 0 :type fixnum)
-    (x-min 0 :type fixnum)
-    (y-max 0 :type fixnum)
-    (x-max 0 :type fixnum)
-    (y-size 0 :type fixnum)
-    (x-size 0 :type fixnum)
-    (f-packflag nil)
-    (f-packline nil)
-    (f-img nil))
 
   (defun find-edges (packflag height width)
     (let ((pf-height (ash height -3))
@@ -1933,8 +1928,8 @@ Implemenation
           ;; кордината самого правого края фигуры, а второй - это
           ;; координата самого левого края фигуры
           (loop for (cur-right-pair cur-left-pair) in maximin do
-            ;; (plot-points packflag (list cur-right-pair)  #b10000000)
-            ;; (plot-points packflag (list cur-left-pair)   #b01000000)
+            (plot-points packflag (list cur-right-pair)  #b10000000)
+            (plot-points packflag (list cur-left-pair)   #b01000000)
             (destructuring-bind (yy-cur-right . xx-cur-right)
                 cur-right-pair
               (loop for (cand-right-pair cand-left-pair) in maximin do
@@ -2063,11 +2058,12 @@ Implemenation
   ;;       )))
 
 
-
-
-
   ;; TODO:
   ;; слить соседние фигуры
+  ;;   - переписать на структуры edge-8x8
+  ;;   - добавить в структуру direction
+  ;;   - сделать алгоритм поиска соседних блоков
+  ;;   - сделать алгоритм слияния
   ;; отправить в тессеракт
   ;; получить распознанные блоки и их координаты
 #+END_SRC
@@ -2442,7 +2438,50 @@ http://algolist.ru/graphics/fill.php
   <<launcher>>
 #+END_SRC
 
-* Tesseract
+* Supercompile
+
+#+BEGIN_SRC lisp
+  (defun supercompile (expr)
+    (cond ((and (atom expr)
+                (not (numberp expr)))
+           (progn
+             (format t "::expr: ~A~%" expr)
+             expr))
+          ((eq (car expr) 'factorial)
+           (progn
+             (format t "::factorial~%" expr)
+             (let ((n (cadr expr)))
+               (if (integerp n)
+                   (let ((result 1))
+                     (do ((i 1 (+ i 1)))
+                         ((> i n) result)
+                       (setf result (* result i))))
+                   ;; else
+                   `(* ,(supercompile n)
+                       (factorial (- ,n 1)))))))
+          (t (progn
+               (format t "::recur: ~A~%" expr)
+               (cons (supercompile (car expr))
+                     (supercompile (cdr expr)))))))
+
+  (defun factorial (n)
+    (if (<= n 1)
+        1
+        (* n (factorial (- n 1)))))
+
+  (factorial (factorial 5))
+
+  (defun factorial-sup (n)
+    (eval (supercompile `(factorial (factorial 5)))))
+
+  (supercompile `(factorial (factorial 5)))
+
+  (equal (factorial-sup 5)
+         (factorial 5))
+
+  (trace supercompile)
+#+END_SRC
+
 * TODO Cutting
 
 Можно ли автоматически сгенерировать по этой картинке программу на форте, которая будет форкаться для того чтобы как можно быстрее воспроизвести в точности такое изображение?
