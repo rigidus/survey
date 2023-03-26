@@ -1345,6 +1345,10 @@ Implemenation
 
 #+NAME: edge_8x8
 #+BEGIN_SRC lisp
+  (defstruct pnt
+    (y 0 :type fixnum)
+    (x 0 :type fixnum))
+
   (deftype direction ()
     ;; to-right to-up to-left to-down
     '(member :tr :tu :tl :td))
@@ -1375,9 +1379,10 @@ Implemenation
   ;; Y-координата идет в CUR-PNT первой
   ;; -1 means to low
   ;; -2 means to high
+  ;; TODO:inilne
   (defun forward-side (cur-pnt direction height width)
-    (destructuring-bind (yy . xx)
-        cur-pnt
+    (let ((yy (pnt-y cur-pnt))
+          (xx (pnt-x cur-pnt)))
       (destructuring-bind (yyy . xxx)
           (ecase direction
             (:tr (cons yy (+ xx 1)))
@@ -1388,13 +1393,13 @@ Implemenation
         (when (< xxx 0)       (setf xxx -1))
         (when (> yyy height)  (setf yyy -2))
         (when (> xxx width)   (setf xxx -2))
-        (cons yyy xxx))))
+        (make-pnt :y yyy :x xxx))))
 
   ;; (forward-side-pnt-coords (cons 202 3) :td 200 300)
 
   (defun fg-p (cur-pnt packflag height width)
-    (destructuring-bind (yy . xx)
-        cur-pnt
+    (let ((yy (pnt-y cur-pnt))
+          (xx (pnt-x cur-pnt)))
       (and (>= yy 0)
            (>= xx 0)
            (< yy height)
@@ -1412,11 +1417,13 @@ Implemenation
           (direction :tr))       ;; задаем начальное направление
       (labels ((f ()
                  (let ((out-edge-pnt
-                         (make-edge-pnt ;; cur-pnt
-                          :y (car cur-pnt) :x (cdr cur-pnt) :d direction)))
+                         (make-edge-pnt
+                          :y (pnt-y cur-pnt)
+                          :x (pnt-x cur-pnt)
+                          :d direction)))
                    (push out-edge-pnt stack))
                  (setf cur-pnt (forward-side cur-pnt direction height width))
-                 (not (equal cur-pnt entry-point))))
+                 (not (equalp cur-pnt entry-point))))
         ;; (format t "direction: ~A ~%" direction)
         (tagbody
          lab_A
@@ -1464,7 +1471,7 @@ Implemenation
                          (0 1 1 0 )
                          (0 1 1 0 )
                          (0 0 0 0 )))
-           (start-point (cons 1 1))
+           (start-point (make-pnt :y 1 :x 1))
            (height 10)
            (width 10)
            (expected-result
@@ -1474,9 +1481,13 @@ Implemenation
                    #S(EDGE-PNT :Y 2 :X 1 :D :TU)))
            (result (edge-8x8 start-point height width packflag)))
       (if (equalp result expected-result)
-          (format t "::= Test passed.")
-          (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
-                  expected-result result))))
+          (progn
+            (format t ":: Test passed.")
+            t)
+          (progn
+            (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
+                    expected-result result)
+          nil))))
 
   ;; (simple-test)
 
@@ -1489,7 +1500,7 @@ Implemenation
                          (0 0 1 1 1 0 0)
                          (0 0 0 1 1 0 0)
                          (0 0 0 0 0 0 0)))
-           (start-point (cons 1 1))
+           (start-point (make-pnt :y 1 :x 1))
            (height 10)
            (width 10)
            (expected-result
@@ -1506,9 +1517,13 @@ Implemenation
               #S(EDGE-PNT :Y 2 :X 2 :D :TL) #S(EDGE-PNT :Y 2 :X 1 :D :TU)))
            (result (edge-8x8 start-point height width packflag)))
       (if (equalp result expected-result)
-          (format t ":: Test passed.")
-          (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
-                  expected-result result))))
+          (progn
+            (format t ":: Test passed.")
+            t)
+          (progn
+            (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
+                    expected-result result)
+          nil))))
 
   ;; (complex-test)
 
@@ -1518,7 +1533,7 @@ Implemenation
                          (1 1 1 1)
                          (1 1 1 0)
                          (0 1 1 0)))
-           (start-point (cons 0 0))
+           (start-point (make-pnt :y 0 :x 0))
            (height 5)
            (width 4)
            (expected-result
@@ -1533,9 +1548,13 @@ Implemenation
               #S(EDGE-PNT :Y 1 :X 1 :D :TU) #S(EDGE-PNT :Y 0 :X 1 :D :TL)))
            (result (edge-8x8 start-point height width packflag)))
       (if (equalp result expected-result)
-          (format t ":: Test passed.")
-          (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
-                  expected-result result))))
+          (progn
+            (format t ":: Test passed.")
+            t)
+          (progn
+            (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
+                    expected-result result)
+            nil))))
 
   ;; (border-test)
 #+END_SRC
@@ -1559,10 +1578,6 @@ Implemenation
 #+BEGIN_SRC lisp
   ;; (declaim (OPTIMIZE (SPEED 3) #|(SAFETY 0)|# ))
 
-  (defstruct pnt
-    (yy 0 :type fixnum)
-    (xx 0 :type fixnum))
-
   (defun pnt-or-nil-p (thing)
     (or (pnt-p thing)
         (null thing)))
@@ -1575,13 +1590,13 @@ Implemenation
   (defun fill-8x8 (cur-pnt height width packflag fill-mask &optional ret-flag)
     (declare (optimize (speed 3) (safety 0) (debug 0)))
     (declare (type fixnum width) (type fixnum height))
-    (let ((stk (list (make-pnt :yy (car cur-pnt) ;; Поместим первую точку в стек
-                               :xx (cdr cur-pnt))))
+    (let ((stk (list (make-pnt :y (car cur-pnt) ;; Поместим первую точку в стек
+                               :x (cdr cur-pnt))))
           (last-right nil)
           (res)) ;; Закрашенные точки возвращаются если ret-flag=t
       (declare (type pnt-or-nil last-right))
       (labels ((set-last-right (cur-y x-pnt)
-                 (setf last-right (make-pnt :yy cur-y :xx x-pnt)))
+                 (setf last-right (make-pnt :y cur-y :x x-pnt)))
                (enq (elt)
                  (push elt stk))
                (deq ()
@@ -1608,8 +1623,8 @@ Implemenation
         (declare (inline set-last-right) (inline enq) (inline deq) (inline fg-pp)
                  (inline set-fill) (inline fill-p))
         (loop for cur-pnt = (deq) then (deq) always cur-pnt do
-          (let ((cur-y (pnt-yy cur-pnt))
-                (cur-x (pnt-xx cur-pnt)))
+          (let ((cur-y (pnt-y cur-pnt))
+                (cur-x (pnt-x cur-pnt)))
             (declare (type fixnum cur-y)  (type fixnum cur-x))
             (let ((x-left cur-x)
                   (x-right cur-x))
@@ -1867,23 +1882,11 @@ Implemenation
   ;; (macroexpand-1 '(plot-points packflag cur-edge #b01000000))
 
 
-  (defmacro remove-from-candidates (list-of-points rest-of-candidates)
-    (let ((pnt (gensym)))
-      `(loop for ,pnt in ,list-of-points do
-        (setf ,rest-of-candidates ;; delete really faster them remove
-              (delete ,pnt ,rest-of-candidates :test #'equal)))))
-
-  ;; (macroexpand-1 '(remove-from-candidates list-of-points rest-of-candidates))
-
   (defun save-packflag (filepath par-packflag par-packline y-size x-size channels bit-depth &optional img)
     (let ((new (re-conv-8x8 par-packflag par-packline y-size x-size channels bit-depth img)))
       (with-open-file (output filepath :element-type '(unsigned-byte 8)
                                        :direction :output :if-exists :supersede)
         (png:encode new output))))
-
-
-  ;; launcher
-
 
   (defun find-edges (packflag height width)
     (let ((pf-height (ash height -3))
@@ -1894,20 +1897,29 @@ Implemenation
                  ;; цветом тона (1) которая находится ниже точки с цветом
                  ;; фона (0)"
                  (let ((ret-candidates))
-                   (do* ((xx      0  (+ 1 xx)))
+                   (do* ((xx 0  (+ 1 xx)))
                         ((>= xx width))
                      (let ((prev 0))
-                       (do* ((yy      0  (+ 1 yy)))
+                       (do* ((yy 0  (+ 1 yy)))
                             ((>= yy height))
                          (let ((flag (aref packflag yy xx)))
                            (if (= 0 flag)
-                               (progn
-                                 (setf prev 0))
-                               ;; else
-                               (when (= 0 prev)
-                                 (push (cons yy xx) ret-candidates)
-                                 (setf prev flag)))))))
+                               (setf prev 0)    ;; then
+                               (when (= 0 prev) ;; else
+                                 (let ((cand(make-pnt :y yy :x xx)))
+                                 (push cand ret-candidates)
+                                   (setf prev flag))))))))
                    (reverse ret-candidates)))
+               (remove-from-candidates (list-of-points rest-of-candidates)
+                 (loop for pnt in list-of-points do
+                   (setf rest-of-candidates ;; delete really faster them remove
+                         (delete pnt rest-of-candidates
+                                 :test #'(lambda (edge-pnt cand-pnt)
+                                           (and
+                                            (equalp (edge-pnt-y edge-pnt)
+                                                    (pnt-y cand-pnt))
+                                            (equalp (edge-pnt-x edge-pnt)
+                                                    (pnt-x cand-pnt))))))))
                (rec-elim (candidates)
                  ;; Поиск краев фигуры, начиная от затравки с последующим
                  ;; удалением всех точек краев из остатка списка кандидатов
@@ -1935,6 +1947,8 @@ Implemenation
         (reverse edges))))
 
 
+  ;; launcher
+
   (defun launcher ()
     (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
                  (png:decode input)))
@@ -1942,43 +1956,44 @@ Implemenation
       (multiple-value-bind (packflag packline height width channels bit-depth)
           (conv-8x8 img)
         (let* ((edges   (find-edges packflag height width)) ;; Находим все границы фигур
-               (maximin (loop for cur-edge in edges
-                              collect (list
-                                       (reduce #'(lambda (max-pair pair)
-                                                   (if (> (cdr pair) (cdr max-pair))
-                                                       pair
-                                                       max-pair))
-                                               cur-edge)
-                                       (reduce #'(lambda (min-pair pair)
-                                                   (if (< (cdr pair) (cdr min-pair))
-                                                       pair
-                                                       min-pair))
-                                               cur-edge))))
-               (neighbors))
-          (print maximin)
-          ;; maximin - это список. Каждый элемент этого списка - это
-          ;; список из 2-х элементов, первый из которых - это
-          ;; кордината самого правого края фигуры, а второй - это
-          ;; координата самого левого края фигуры
-          (loop for (cur-right-pair cur-left-pair) in maximin do
-            (plot-points packflag (list cur-right-pair)  #b10000000)
-            (plot-points packflag (list cur-left-pair)   #b01000000)
-            (destructuring-bind (yy-cur-right . xx-cur-right)
-                cur-right-pair
-              (loop for (cand-right-pair cand-left-pair) in maximin do
-                (destructuring-bind (yy-cand-left . xx-cand-left)
-                    cand-left-pair
-                  (when (and (= yy-cur-right yy-cand-left)
-                             (< 0 (- xx-cand-left xx-cur-right))
-                             (> 3 (- xx-cand-left xx-cur-right)))
-                    (plot-points packflag (list cur-right-pair)  #b10000000)
-                    (plot-points packflag (list cand-left-pair)  #b01000000)
-                    (print (- xx-cand-left xx-cur-right))
-                    )))))
-          ;; save
-          (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
-                         packflag packline height width
-                         channels bit-depth img)
+               ;; (maximin (loop for cur-edge in edges
+               ;;                collect (list
+               ;;                         (reduce #'(lambda (max-pair pair)
+               ;;                                     (if (> (cdr pair) (cdr max-pair))
+               ;;                                         pair
+               ;;                                         max-pair))
+               ;;                                 cur-edge)
+               ;;                         (reduce #'(lambda (min-pair pair)
+               ;;                                     (if (< (cdr pair) (cdr min-pair))
+               ;;                                         pair
+               ;;                                         min-pair))
+               ;;                                 cur-edge))))
+               )
+          (print edges)
+          ;; (print maximin)
+          ;; ;; maximin - это список. Каждый элемент этого списка - это
+          ;; ;; список из 2-х элементов, первый из которых - это
+          ;; ;; кордината самого правого края фигуры, а второй - это
+          ;; ;; координата самого левого края фигуры
+          ;; (loop for (cur-right-pair cur-left-pair) in maximin do
+          ;;   (plot-points packflag (list cur-right-pair)  #b10000000)
+          ;;   (plot-points packflag (list cur-left-pair)   #b01000000)
+          ;;   (destructuring-bind (yy-cur-right . xx-cur-right)
+          ;;       cur-right-pair
+          ;;     (loop for (cand-right-pair cand-left-pair) in maximin do
+          ;;       (destructuring-bind (yy-cand-left . xx-cand-left)
+          ;;           cand-left-pair
+          ;;         (when (and (= yy-cur-right yy-cand-left)
+          ;;                    (< 0 (- xx-cand-left xx-cur-right))
+          ;;                    (> 3 (- xx-cand-left xx-cur-right)))
+          ;;           (plot-points packflag (list cur-right-pair)  #b10000000)
+          ;;           (plot-points packflag (list cand-left-pair)  #b01000000)
+          ;;           (print (- xx-cand-left xx-cur-right))
+          ;;           )))))
+          ;; ;; save
+          ;; (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
+          ;;                packflag packline height width
+          ;;                channels bit-depth img)
           ))))
 
   (time
