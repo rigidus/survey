@@ -1345,24 +1345,32 @@ Implemenation
 
 #+NAME: edge_8x8
 #+BEGIN_SRC lisp
-  (deftype direction () '(member :to-right :to-up :to-left :to-down))
+  (deftype direction ()
+    ;; to-right to-up to-left to-down
+    '(member :tr :tu :tl :td))
 
   (defstruct edge-pnt
-    (yy 0 :type fixnum)
-    (xx 0 :type fixnum)
-    (dir :to-right :type direction))
+    (y 0 :type fixnum)
+    (x 0 :type fixnum)
+    (d :tr :type direction))
+
+  (defmethod print-object ((obj edge-pnt) stream)
+    (format stream "#S(EDGE-PNT :Y ~A :X ~A :D :~A)"
+            (edge-pnt-y obj)
+            (edge-pnt-x obj)
+            (edge-pnt-d obj)))
 
   (defun rotate-left (direction)
-    (cond ((equal :to-right direction) :to-up)
-          ((equal :to-up direction) :to-left)
-          ((equal :to-left direction) :to-down)
-          ((equal :to-down direction) :to-right)))
+    (cond ((equal :tr direction) :tu)
+          ((equal :tu direction) :tl)
+          ((equal :tl direction) :td)
+          ((equal :td direction) :tr)))
 
   (defun rotate-right (direction)
-    (cond ((equal :to-right direction) :to-down)
-          ((equal :to-up direction) :to-right)
-          ((equal :to-left direction) :to-up)
-          ((equal :to-down direction) :to-left)))
+    (cond ((equal :tr direction) :td)
+          ((equal :tu direction) :tr)
+          ((equal :tl direction) :tu)
+          ((equal :td direction) :tl)))
 
   ;; Y-координата идет в CUR-PNT первой
   ;; -1 means to low
@@ -1372,17 +1380,17 @@ Implemenation
         cur-pnt
       (destructuring-bind (yyy . xxx)
           (ecase direction
-            (:to-right (cons yy (+ xx 1)))
-            (:to-up    (cons (- yy 1) xx))
-            (:to-left  (cons yy (- xx 1)))
-            (:to-down  (cons (+ yy 1) xx)))
+            (:tr (cons yy (+ xx 1)))
+            (:tu (cons (- yy 1) xx))
+            (:tl (cons yy (- xx 1)))
+            (:td (cons (+ yy 1) xx)))
         (when (< yyy 0)       (setf yyy -1))
         (when (< xxx 0)       (setf xxx -1))
         (when (> yyy height)  (setf yyy -2))
         (when (> xxx width)   (setf xxx -2))
         (cons yyy xxx))))
 
-  ;; (forward-side-pnt-coords (cons 202 3) :to-down 200 300)
+  ;; (forward-side-pnt-coords (cons 202 3) :td 200 300)
 
   (defun fg-p (cur-pnt packflag height width)
     (destructuring-bind (yy . xx)
@@ -1397,14 +1405,16 @@ Implemenation
     (forward-side cur-pnt (rotate-left direction) height width))
 
 
-
   (defun edge-8x8 (cur-pnt height width packflag)
     ;; packflag not mutable in this functuin
     (let ((entry-point cur-pnt)        ;; сохраняем начальную точку
           (stack '())                  ;; создаем пустой стек
-          (direction :to-right))       ;; задаем начальное направление
+          (direction :tr))       ;; задаем начальное направление
       (labels ((f ()
-                 (push cur-pnt stack)
+                 (let ((out-edge-pnt
+                         (make-edge-pnt ;; cur-pnt
+                          :y (car cur-pnt) :x (cdr cur-pnt) :d direction)))
+                   (push out-edge-pnt stack))
                  (setf cur-pnt (forward-side cur-pnt direction height width))
                  (not (equal cur-pnt entry-point))))
         ;; (format t "direction: ~A ~%" direction)
@@ -1457,13 +1467,18 @@ Implemenation
            (start-point (cons 1 1))
            (height 10)
            (width 10)
-           (expected-result '((1 . 1) (1 . 2) (2 . 2) (2 . 1)))
+           (expected-result
+             (list #S(EDGE-PNT :Y 1 :X 1 :D :TR)
+                   #S(EDGE-PNT :Y 1 :X 2 :D :TD)
+                   #S(EDGE-PNT :Y 2 :X 2 :D :TL)
+                   #S(EDGE-PNT :Y 2 :X 1 :D :TU)))
            (result (edge-8x8 start-point height width packflag)))
-    (if (equal result expected-result)
-        (format t "::= Test passed.")
-        (format t "::= Test failed. Expected: ~A, but got: ~A" expected-result result))))
+      (if (equalp result expected-result)
+          (format t "::= Test passed.")
+          (format t "::= Test failed. Expected:~%~A~%, but got:~%~A"
+                  expected-result result))))
 
-  ;; (simple-test)
+  (simple-test)
 
   (defun complex-test ()
     (let* ((packflag #2A((0 0 0 0 0 0 0)
@@ -1481,7 +1496,7 @@ Implemenation
                               (2 . 5) (3 . 5) (4 . 5) (4 . 4) (5 . 4) (6 . 4) (6 . 3)
                               (5 . 3) (5 . 2) (4 . 2) (3 . 2) (2 . 2) (2 . 1)))
            (result (edge-8x8 start-point height width packflag)))
-      (if (equal result expected-result)
+      (if (equalp result expected-result)
           (format t ":: Test passed.")
           (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
 
@@ -1500,7 +1515,7 @@ Implemenation
                               (3 . 2) (4 . 2) (4 . 1) (3 . 1) (3 . 0) (2 . 0) (2 . 1)
                               (1 . 1) (0 . 1)))
            (result (edge-8x8 start-point height width packflag)))
-      (if (equal result expected-result)
+      (if (equalp result expected-result)
           (format t ":: Test passed.")
           (format t ":: Test failed. Expected: ~A, but got: ~A" expected-result result))))
 
