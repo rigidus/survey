@@ -1199,24 +1199,101 @@ How to make screenshot:
         (png:encode new output))))
 
 
-  (let* ((img
-           (with-open-file
-               ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
-               (input "antalya.png" :element-type '(unsigned-byte 8))
-             (png:decode input))))
-    (multiple-value-bind (packflag packline height width channels bit-depth)
-        (conv-8x8 img)
-      ;; (save-packflag-for-test
-      ;; "copy2.png" packflag packline height width channels bit-depth img)))
-      (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
-                              img
-                              )))
-        (with-open-file
-            (output "copy3.png"
-                    :element-type '(unsigned-byte 8)
-                    :direction :output :if-exists :supersede)
-          (png:encode new output)))
-      ))
+  ;; (let* ((img
+  ;;          (with-open-file
+  ;;              ;; (input "x-snapshot-true-color-telegram.png" :element-type '(unsigned-byte 8))
+  ;;              (input "antalya.png" :element-type '(unsigned-byte 8))
+  ;;            (png:decode input))))
+  ;;   (multiple-value-bind (packflag packline height width channels bit-depth)
+  ;;       (conv-8x8 img)
+  ;;     ;; (save-packflag-for-test
+  ;;     ;; "copy2.png" packflag packline height width channels bit-depth img)))
+  ;;     (let ((new (re-conv-8x8 packflag packline height width channels bit-depth
+  ;;                             img
+  ;;                             )))
+  ;;       (with-open-file
+  ;;           (output "copy3.png"
+  ;;                   :element-type '(unsigned-byte 8)
+  ;;                   :direction :output :if-exists :supersede)
+  ;;         (png:encode new output)))
+  ;;     ))
+
+
+  ;; Модифицированная версия
+  (defun re-conv-8x8 (packflag packline height width channels bit-depth &optional old)
+    (declare (optimize (speed 3))
+             (optimize (safety 0)))
+    (let* ((new        (png:make-image height width channels bit-depth)))
+      ;; Восстанавливаем информацию из packflag и packline
+      (do* ((yy1      0  (+ 1 yy1))
+            (yy-8-p   0  (logand yy1 7))
+            (yy3      0  (ash yy1 -3)))
+           ((>= yy1 height))
+        (declare (type fixnum yy1) (type fixnum yy-8-p) (type fixnum yy3))
+        (do* ((xx1      0  (+ 1 xx1))
+              (xx-8-p   0  (logand xx1 7))
+              (xx3      0  (ash xx1 -3)))
+             ((>= xx1 width))
+          (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
+          (let* ((packflag (aref packflag yy3 xx3))
+                 (bb7 (logand #b10000000 packflag))
+                 (bb6 (logand #b01000000 packflag))
+                 (b_5 (logand #b00111111 packflag))
+                 (yy4 (ash b_5 -3))
+                 (xx4 (logand b_5 #b111))
+                 (y-chg (+ yy4 (logand yy1 -8)))  ;; Y изменения цвета
+                 (x-chg (+ xx4 (logand xx1 -8)))) ;; X изменения цвета
+            (if (= 0 b_5)
+                ;; 8x8-квадрат залит полностью - выведем его цвет с
+                ;; дитерингом осветляя каждый второй пиксель, чтобы
+                ;; показать что это фон и получить масштабную сетку
+                (rgb-times
+                  (if (or (not (= 0 (logand yy1 #b010)))
+                          (not (= 0 (logand xx1 #b010))))
+                      (aref packline yy3 xx3 zz)
+                      ;; else
+                      (logand 255 (+ 20 (aref packline yy3 xx3 zz)))))
+                ;; else: 8x8-квадрат не залит полностью
+                (if (and (< yy1 y-chg)
+                         (< xx3 x-chg))
+                    ;; заливаем первые пиксели цветом из packline
+                    (progn ;; filled part
+                      (rgb-times
+                        (aref packline yy3 xx3 zz)))
+                    ;; else: а остальные
+                    ;; пропускаем если у нас нет исходного изображения,
+                    ;; иначе берем пиксели из исходника, но обнуляем
+                    ;; их младшие биты, чтобы цвет остальных пикселей
+                    ;; отличался от того что мы взяли из packline для
+                    ;; залитого участка квадрата
+                    (when old
+                      (rgb-times
+                        (logand 255
+                                ;; we need only 1 bit for channel
+                                (logior #b00011111
+                                        (aref old yy1 xx1 zz)))))))
+            ;; Особые случаи: Если у нас есть флаги bb7 и bb6
+            (when (not (= 0 bb7))
+              (rgb-times
+                (if (and (= 1 zz)
+                         (or (= (logand yy1 #b111) (logand xx1 #b111))
+                             (= 0 (logand yy1 #b111))
+                             (= 0 (logand xx1 #b111))))
+                    255
+                    ;; else
+                    (aref new yy1 xx1 zz)
+                    )))
+            (when (not (= 0 bb6))
+              (rgb-times
+                (if (and (= 2 zz)
+                         (or (= (logand yy1 #b111) (logand xx1 #b111))
+                             (= 0 (logand yy1 #b111))
+                             (= 0 (logand xx1 #b111))))
+                    255
+                    ;; else
+                    (aref new yy1 xx1 zz)
+                    ))))))
+      new))
 #+END_SRC
 
 * Edge detector
@@ -1719,27 +1796,7 @@ Implemenation
 #+NAME: launcher
 #+BEGIN_SRC lisp
   (ql:quickload "alexandria")
-
-  (defun start-fig-candidates-8x8 (packflag height width)
-    "Поиск затравок сверху вниз. Затравка - это точка с
-     цветом тона (1) которая находится ниже точки с цветом
-     фона (0)"
-    (let ((ret-candidates))
-      (do* ((xx      0  (+ 1 xx)))
-           ((>= xx width))
-        (let ((prev 0))
-          (do* ((yy      0  (+ 1 yy)))
-               ((>= yy height))
-            (let ((flag (aref packflag yy xx)))
-              (if (= 0 flag)
-                  (progn
-                    (setf prev 0))
-                  ;; else
-                  (when (= 0 prev)
-                    (push (cons yy xx) ret-candidates)
-                    (setf prev flag)))))))
-      (reverse ret-candidates)))
-
+  (ql:quickload "cl-tesseract")
 
   (defun deviation-in-percent (measured standard)
     (if (zerop standard)
@@ -1786,118 +1843,231 @@ Implemenation
 
   ;; launcher
 
+  (defstruct fig
+    (fill nil)
+    (edge nil)
+    (filename "")
+    (y-min 0 :type fixnum)
+    (x-min 0 :type fixnum)
+    (y-max 0 :type fixnum)
+    (x-max 0 :type fixnum)
+    (y-size 0 :type fixnum)
+    (x-size 0 :type fixnum)
+    (f-packflag nil)
+    (f-packline nil)
+    (f-img nil))
+
+  (defun find-edges (packflag height width)
+    (let ((pf-height (ash height -3))
+          (pf-width  (ash width  -3))
+          (edges))
+      (labels ((find-candidates-8x8 (packflag height width)
+                 ;; Поиск затравок сверху вниз. Затравка - это точка с
+                 ;; цветом тона (1) которая находится ниже точки с цветом
+                 ;; фона (0)"
+                 (let ((ret-candidates))
+                   (do* ((xx      0  (+ 1 xx)))
+                        ((>= xx width))
+                     (let ((prev 0))
+                       (do* ((yy      0  (+ 1 yy)))
+                            ((>= yy height))
+                         (let ((flag (aref packflag yy xx)))
+                           (if (= 0 flag)
+                               (progn
+                                 (setf prev 0))
+                               ;; else
+                               (when (= 0 prev)
+                                 (push (cons yy xx) ret-candidates)
+                                 (setf prev flag)))))))
+                   (reverse ret-candidates)))
+               (rec-elim (candidates)
+                 ;; Поиск краев фигуры, начиная от затравки с последующим
+                 ;; удалением всех точек краев из остатка списка кандидатов
+                 ;; пока список кандидатов не закончится
+                 (if (null candidates)
+                     (values)
+                     ;; else
+                     (let* ((candidate (car candidates))
+                            (rest-of-candidates (cdr candidates))
+                            (cur-edge (edge-8x8 candidate pf-height pf-width packflag)))
+                       (push cur-edge edges)
+                       ;; Удаляем из списка кандидатов все точки обнаруженного
+                       ;; края фигуры (cur-edge). Так как по определению края ищутся
+                       ;; начиная с каждой точки-кандидата было бы избыточно удалять
+                       ;; из кандидатов все точки заливки (cur-full)
+                       (remove-from-candidates cur-edge rest-of-candidates)
+                       ;; (print (length rest-of-candidates))
+                       ;; Хвостовая рекурсия
+                       (rec-elim rest-of-candidates)))))
+        (declare (inline find-candidates-8x8) (inline rec-elim))
+        ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
+        ;; оставшихся кандидатов тех, что совпадают с найденными краями
+        ;; пока кандидатов не останется. На выходе - edges
+        (rec-elim (find-candidates-8x8 packflag pf-height pf-width))
+        (reverse edges))))
+
+
   (defun launcher ()
     (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
                  (png:decode input)))
-          (dir  (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym)))))
-          ;; (dir_ (ensure-directories-exist (format nil "./~A_/" (symbol-name (gensym)))))
-          )
+          (dir (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym))))))
       (multiple-value-bind (packflag packline height width channels bit-depth)
           (conv-8x8 img)
-        (let ((pf-height (ash height -3))
-              (pf-width  (ash width  -3)))
-          (labels ((rec-elim (candidates)
-                     (if (null candidates)
-                         (values)
-                         ;; else
-                         (let* ((candidate (car candidates))
-                                (rest-of-candidates (cdr candidates))
-                                (cur-fill ;; в процесе заливки сам расставляет признаки
-                                  (fill-8x8 candidate pf-height pf-width packflag #b10000000 t))
-                                (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
-                                (filename  (symbol-name (gensym)))
-                                (ys (mapcar #'car cur-edge))
-                                (xs (mapcar #'cdr cur-edge))
-                                (y-min (reduce #'min ys))
-                                (x-min (reduce #'min xs))
-                                (y-max (reduce #'max ys))
-                                (x-max (reduce #'max xs))
-                                (y-size (+ 1 (- y-max y-min)))
-                                (x-size (+ 1 (- x-max x-min)))
-                                (new-packflag
-                                  (make-array `(,pf-height ,pf-width)
-                                              :element-type 'fixnum :initial-element 0))
-                                (new-packline
-                                  (make-array `(,pf-height ,pf-width ,channels)
-                                              :element-type '(unsigned-byte 8)
-                                              :initial-element 0))
-                                (new-img  (png:make-image (ash y-size 3) (ash x-size 3)
-                                                          channels bit-depth)))
-                           (format t "y-size:~A x-size:~A ~%" y-size x-size)
-                           ;; Окраска точек для визуализации
-                           ;; (dbgout-array cur-fill)
-                           ;; (plot-points packflag cur-fill #b10000000) ;; не надо, уже окрашено
-                           (plot-points packflag cur-edge #b01000000)
-                           ;; new-packflag, new-packline
-                           (do* ((yy 0  (+ 1 yy)))
-                                ((>= yy y-size))
-                             (declare (type fixnum yy))
-                             (do* ((xx 0  (+ 1 xx)))
-                                  ((>= xx x-size))
-                               (declare (type fixnum xx))
-                               (setf (aref new-packflag yy xx)
-                                     (aref packflag (+ yy y-min) (+ xx x-min)))
-                               (dotimes (zz channels)
-                                 (setf (aref new-packline yy xx zz)
-                                       (aref packline (+ yy y-min) (+ xx x-min) zz)))))
-                           ;; new-img
-                           (let ((y-start (ash y-min 3))
-                                 (x-start (ash x-min 3)))
-                             (do* ((yy 0  (+ 1 yy)))
-                                  ((>= yy (ash y-size 3)))
-                               (declare (type fixnum yy))
-                               (do* ((xx 0 (+ 1 xx)))
-                                    ((>= xx (ash x-size 3)))
-                                 (declare (type fixnum xx))
-                                 (dotimes (zz channels)
-                                   (setf (aref new-img yy xx zz)
-                                         (aref img
-                                               (+ yy y-start)
-                                               (+ xx x-start)
-                                               zz))))))
-                           ;; save img
-                           ;; (with-open-file
-                           ;;     (output (format nil "~A/~A.png" dir (gensym))
-                           ;;             :element-type '(unsigned-byte 8)
-                           ;;             :direction :output :if-exists :supersede)
-                           ;;   (png:encode new-img output))
-                           ;; save pic
-                           (save-packflag (format nil "~A/~A.png" dir filename)
-                                          new-packflag new-packline (ash y-size 3) (ash x-size 3)
-                                          channels bit-depth new-img)
-                           ;; (save-packflag (format nil "~A/~A.png" dir_ filename)
-                           ;;                packflag packline height width
-                           ;;                channels bit-depth img)
-                           ;; Удаляем из списка кандидатов все точки обнаруженного
-                           ;; края фигуры (cur-edge). Так как по определению края ищутся
-                           ;; начиная с каждой точки-кандидата было бы избыточно удалять
-                           ;; из кандидатов все точки заливки (cur-full)
-                           (remove-from-candidates cur-edge rest-of-candidates)
-                           ;; (print (length rest-of-candidates))
-                           ;; Хвостовая рекурсия
-                           (rec-elim rest-of-candidates)))))
-            ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
-            ;; оставшихся кандидатов тех, что совпадают с найденными краями
-            ;; пока кандидатов не останется. На выходе - edges
-            (rec-elim (start-fig-candidates-8x8 packflag pf-height pf-width)))
-          ;; Убираем слишком мелкие фигуры
-          ;; (setf edges (remove-duplicates (remove-if #'(lambda (edg) (> 4 (length edg)))
-          ;;                                           edges)))
-          ;; dbgout: Количество фигур
-          ;; (format t "~%len edges : ~A ~%" (length edges))
-          ;; Выводим картинки
-          ;; (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
-          ;;                packflag packline height width
-          ;;                channels bit-depth img)
-          ;;
+        (let* ((edges   (find-edges packflag height width)) ;; Находим все границы фигур
+               (maximin (loop for cur-edge in edges
+                              collect (list
+                                       (reduce #'(lambda (max-pair pair)
+                                                   (if (> (cdr pair) (cdr max-pair))
+                                                       pair
+                                                       max-pair))
+                                               cur-edge)
+                                       (reduce #'(lambda (min-pair pair)
+                                                   (if (< (cdr pair) (cdr min-pair))
+                                                       pair
+                                                       min-pair))
+                                               cur-edge))))
+               (neighbors))
+          (print maximin)
+          ;; maximin - это список. Каждый элемент этого списка - это
+          ;; список из 2-х элементов, первый из которых - это
+          ;; кордината самого правого края фигуры, а второй - это
+          ;; координата самого левого края фигуры
+          (loop for (cur-right-pair cur-left-pair) in maximin do
+            ;; (plot-points packflag (list cur-right-pair)  #b10000000)
+            ;; (plot-points packflag (list cur-left-pair)   #b01000000)
+            (destructuring-bind (yy-cur-right . xx-cur-right)
+                cur-right-pair
+              (loop for (cand-right-pair cand-left-pair) in maximin do
+                (destructuring-bind (yy-cand-left . xx-cand-left)
+                    cand-left-pair
+                  (when (and (= yy-cur-right yy-cand-left)
+                             (< 0 (- xx-cand-left xx-cur-right))
+                             (> 3 (- xx-cand-left xx-cur-right)))
+                    (plot-points packflag (list cur-right-pair)  #b10000000)
+                    (plot-points packflag (list cand-left-pair)  #b01000000)
+                    (print (- xx-cand-left xx-cur-right))
+                    )))))
+          ;; save
+          (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
+                         packflag packline height width
+                         channels bit-depth img)
           ))))
 
   (time
    (launcher))
 
+
+
+  ;; (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
+  ;;              (png:decode input)))
+  ;;       (dir  (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym)))))
+  ;;       ;; (dir_ (ensure-directories-exist (format nil "./~A_/" (symbol-name (gensym)))))
+  ;;       )
+  ;;   (multiple-value-bind (packflag packline height width channels bit-depth)
+  ;;       (conv-8x8 img)
+  ;;     (let ((pf-height (ash height -3))
+  ;;           (pf-width  (ash width  -3)))
+  ;;       (labels ((rec-elim (candidates)
+  ;;                  (if (null candidates)
+  ;;                      (values)
+  ;;                      ;; else
+  ;;                      (let* ((candidate (car candidates))
+  ;;                             (rest-of-candidates (cdr candidates))
+  ;;                             (cur-fill ;; в процесе заливки сам расставляет признаки
+  ;;                               (fill-8x8 candidate pf-height pf-width packflag #b10000000 t))
+  ;;                             (cur-edge (edge-8x8 candidate pf-height pf-width packflag))
+  ;;                             (filename (symbol-name (gensym)))
+  ;;                             (filepath (format nil "~A/~A.png" dir filename))
+  ;;                             (ys (mapcar #'car cur-edge))
+  ;;                             (xs (mapcar #'cdr cur-edge))
+  ;;                             (y-min (reduce #'min ys))
+  ;;                             (x-min (reduce #'min xs))
+  ;;                             (y-max (reduce #'max ys))
+  ;;                             (x-max (reduce #'max xs))
+  ;;                             (y-size (+ 1 (- y-max y-min)))
+  ;;                             (x-size (+ 1 (- x-max x-min)))
+  ;;                             (new-packflag
+  ;;                               (make-array `(,pf-height ,pf-width)
+  ;;                                           :element-type 'fixnum :initial-element 0))
+  ;;                             (new-packline
+  ;;                               (make-array `(,pf-height ,pf-width ,channels)
+  ;;                                           :element-type '(unsigned-byte 8)
+  ;;                                           :initial-element 0))
+  ;;                             (new-img  (png:make-image (ash y-size 3) (ash x-size 3)
+  ;;                                                       channels bit-depth)))
+  ;;                        (format t "y-size:~A x-size:~A ~%" y-size x-size)
+  ;;                        ;; Окраска точек для визуализации
+  ;;                        ;; (dbgout-array cur-fill)
+  ;;                        ;; (plot-points packflag cur-fill #b10000000) ;; не надо, уже окрашено
+  ;;                        (plot-points packflag cur-edge #b01000000)
+  ;;                        ;; new-packflag, new-packline
+  ;;                        (do* ((yy 0  (+ 1 yy)))
+  ;;                             ((>= yy y-size))
+  ;;                          (declare (type fixnum yy))
+  ;;                          (do* ((xx 0  (+ 1 xx)))
+  ;;                               ((>= xx x-size))
+  ;;                            (declare (type fixnum xx))
+  ;;                            (setf (aref new-packflag yy xx)
+  ;;                                  (aref packflag (+ yy y-min) (+ xx x-min)))
+  ;;                            (dotimes (zz channels)
+  ;;                              (setf (aref new-packline yy xx zz)
+  ;;                                    (aref packline (+ yy y-min) (+ xx x-min) zz)))))
+  ;;                        ;; new-img
+  ;;                        (let ((y-start (ash y-min 3))
+  ;;                              (x-start (ash x-min 3)))
+  ;;                          (do* ((yy 0  (+ 1 yy)))
+  ;;                               ((>= yy (ash y-size 3)))
+  ;;                            (declare (type fixnum yy))
+  ;;                            (do* ((xx 0 (+ 1 xx)))
+  ;;                                 ((>= xx (ash x-size 3)))
+  ;;                              (declare (type fixnum xx))
+  ;;                              (dotimes (zz channels)
+  ;;                                (setf (aref new-img yy xx zz)
+  ;;                                      (aref img
+  ;;                                            (+ yy y-start)
+  ;;                                            (+ xx x-start)
+  ;;                                            zz))))))
+  ;;                        ;; ;; save img
+  ;;                        ;; (with-open-file
+  ;;                        ;;     (output filepath :element-type '(unsigned-byte 8)
+  ;;                        ;;                      :direction :output :if-exists :supersede)
+  ;;                        ;;   (png:encode new-img output))
+  ;;                        ;; save pic
+  ;;                        (save-packflag filepath
+  ;;                                       new-packflag new-packline (ash y-size 3) (ash x-size 3)
+  ;;                                       channels bit-depth new-img)
+  ;;                        ;; (save-packflag (format nil "~A/~A.png" dir_ filename)
+  ;;                        ;;                packflag packline height width
+  ;;                        ;;                channels bit-depth img)
+  ;;                        ;; ocr
+  ;;                        (print (cl-tesseract:image-to-text filepath :lang "rus+eng"))
+  ;;                        ;; Удаляем из списка кандидатов все точки обнаруженного
+  ;;                        ;; края фигуры (cur-edge). Так как по определению края ищутся
+  ;;                        ;; начиная с каждой точки-кандидата было бы избыточно удалять
+  ;;                        ;; из кандидатов все точки заливки (cur-full)
+  ;;                        (remove-from-candidates cur-edge rest-of-candidates)
+  ;;                        ;; (print (length rest-of-candidates))
+  ;;                        ;; Хвостовая рекурсия
+  ;;                        (rec-elim rest-of-candidates)))))
+  ;;         ;; Итерируемся по точкам-кандидатам, ища края и удаляя из
+  ;;         ;; оставшихся кандидатов тех, что совпадают с найденными краями
+  ;;         ;; пока кандидатов не останется. На выходе - edges
+  ;;         (rec-elim (start-fig-candidates-8x8 packflag pf-height pf-width)))
+  ;;       ;; dbgout: Количество фигур
+  ;;       ;; (format t "~%len edges : ~A ~%" (length edges))
+  ;;       ;; Выводим картинки
+  ;;       ;; (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
+  ;;       ;;                packflag packline height width
+  ;;       ;;                channels bit-depth img)
+  ;;       ;;
+  ;;       )))
+
+
+
+
+
   ;; TODO:
-  ;; Разобраться как conv-8x8 возвращает данные
-  ;; понять как их восстановить для отправки в тессеракт
+  ;; слить соседние фигуры
   ;; отправить в тессеракт
   ;; получить распознанные блоки и их координаты
 #+END_SRC
