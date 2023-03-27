@@ -1131,7 +1131,8 @@ How to make screenshot:
              ((>= xx1 width))
           (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
           (let* ((packflag (aref packflag yy3 xx3))
-                 (atr (logand #b11000000 packflag))
+                 (bb7 (logand #b10000000 packflag))
+                 (bb6 (logand #b01000000 packflag))
                  (b_5 (logand #b00111111 packflag))
                  (yy4 (ash b_5 -3))
                  (xx4 (logand b_5 #b111))
@@ -1166,48 +1167,28 @@ How to make screenshot:
                                 ;; we need only 1 bit for channel
                                 (logior #b00011111
                                         (aref old yy1 xx1 zz)))))))
-            ;; Особые случаи: Если у нас есть атрибуты
-            ;; (when (not (= 0 atr))
-              (case atr
-                ;; (#b0000000 (rgb-times
-                ;;              (if (and (= 0 zz)
-                ;;                       (or (= (logand yy1 #b111) (logand xx1 #b111))
-                ;;                           (= 0 (logand yy1 #b111))
-                ;;                           (= 0 (logand xx1 #b111))))
-                ;;                  255
-                ;;                  ;; else
-                ;;                  (aref new yy1 xx1 zz)
-                ;;                  )))
-                (#b0100000 (rgb-times
-                             (if (and (= 0 zz)
-                                      (or ;; (= (logand yy1 #b111) (logand xx1 #b111))
-                                          (= 0 yy4)
-                                          ;; (= 0 (logand xx1 #b111))
-                                          ))
-                                 255
-                                 ;; else
-                                 (aref new yy1 xx1 zz)
-                                 )))
-                (#b1000000 (rgb-times
-                             (if (and (= 1 zz)
-                                      (or ;; (= (logand yy1 #b111) (logand xx1 #b111))
-                                          (= 0 yy4)
-                                          ;; (= 0 (logand xx1 #b111))
-                                          ))
-                                 255
-                                 ;; else
-                                 (aref new yy1 xx1 zz)
-                                 )))
-                (#b1100000 (rgb-times
-                             (if (and (= 2 zz)
-                                      (or ;; (= (logand yy1 #b111) (logand xx1 #b111))
-                                          (= 0 yy4)
-                                          ;; (= 0 (logand xx1 #b111))
-                                          ))
-                                 255
-                                 ;; else
-                                 (aref new yy1 xx1 zz)
-                                 )))))))
+            ;; Особые случаи: Если у нас есть флаги bb7 и bb6
+            (when (not (= 0 bb7))
+              (rgb-times
+                (if (and (= 1 zz)
+                         (or (= (logand yy1 #b111) (logand xx1 #b111))
+                             (= 0 (logand yy1 #b111))
+                             (= 0 (logand xx1 #b111))))
+                    255
+                    ;; else
+                    (aref new yy1 xx1 zz)
+                    )))
+            (when (not (= 0 bb6))
+              (rgb-times
+                (if (and (= 2 zz)
+                         (or (= (logand yy1 #b111) (logand xx1 #b111))
+                             (= 0 (logand yy1 #b111))
+                             (= 0 (logand xx1 #b111))))
+                    255
+                    ;; else
+                    (aref new yy1 xx1 zz)
+                    ))))))
+            )))
       new))
 
   ;; launcher
