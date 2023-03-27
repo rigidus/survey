@@ -1188,7 +1188,6 @@ How to make screenshot:
                     ;; else
                     (aref new yy1 xx1 zz)
                     ))))))
-            )))
       new))
 
   ;; launcher
@@ -1219,84 +1218,6 @@ How to make screenshot:
   ;;         (png:encode new output)))
   ;;     ))
 
-
-  ;; Модифицированная версия
-  (defun re-conv-8x8 (packflag packline height width channels bit-depth &optional old)
-    (declare (optimize (speed 3))
-             (optimize (safety 0)))
-    (let* ((new        (png:make-image height width channels bit-depth)))
-      ;; Восстанавливаем информацию из packflag и packline
-      (do* ((yy1      0  (+ 1 yy1))
-            (yy-8-p   0  (logand yy1 7))
-            (yy3      0  (ash yy1 -3)))
-           ((>= yy1 height))
-        (declare (type fixnum yy1) (type fixnum yy-8-p) (type fixnum yy3))
-        (do* ((xx1      0  (+ 1 xx1))
-              (xx-8-p   0  (logand xx1 7))
-              (xx3      0  (ash xx1 -3)))
-             ((>= xx1 width))
-          (declare (type fixnum xx1) (type fixnum xx-8-p) (type fixnum xx3))
-          (let* ((packflag (aref packflag yy3 xx3))
-                 (bb7 (logand #b10000000 packflag))
-                 (bb6 (logand #b01000000 packflag))
-                 (b_5 (logand #b00111111 packflag))
-                 (yy4 (ash b_5 -3))
-                 (xx4 (logand b_5 #b111))
-                 (y-chg (+ yy4 (logand yy1 -8)))  ;; Y изменения цвета
-                 (x-chg (+ xx4 (logand xx1 -8)))) ;; X изменения цвета
-            (if (= 0 b_5)
-                ;; 8x8-квадрат залит полностью - выведем его цвет с
-                ;; дитерингом осветляя каждый второй пиксель, чтобы
-                ;; показать что это фон и получить масштабную сетку
-                (rgb-times
-                  (if (or (not (= 0 (logand yy1 #b010)))
-                          (not (= 0 (logand xx1 #b010))))
-                      (aref packline yy3 xx3 zz)
-                      ;; else
-                      (logand 255 (+ 20 (aref packline yy3 xx3 zz))))
-                  )
-                ;; else: 8x8-квадрат не залит полностью
-                (if (and (< yy1 y-chg)
-                         (< xx3 x-chg))
-                    ;; заливаем первые пиксели цветом из packline
-                    (progn ;; filled part
-                      (rgb-times
-                        (aref packline yy3 xx3 zz)))
-                    ;; else: а остальные
-                    ;; пропускаем если у нас нет исходного изображения,
-                    ;; иначе берем пиксели из исходника, но обнуляем
-                    ;; их младшие биты, чтобы цвет остальных пикселей
-                    ;; отличался от того что мы взяли из packline для
-                    ;; залитого участка квадрата
-                    (when old
-                      (rgb-times
-                        (logand 255
-                                ;; we need only 1 bit for channel
-                                (logior #b00011111
-                                        (aref old yy1 xx1 zz)))))))
-            ;; Особые случаи: Если у нас есть флаги bb7 и bb6
-            (when (not (= 0 bb7))
-              (rgb-times
-                (if (and (= 1 zz)
-                         (or (= (logand yy1 #b111) (logand xx1 #b111))
-                             (= 0 (logand yy1 #b111))
-                             (= 0 (logand xx1 #b111))))
-                    255
-                    ;; else
-                    (aref new yy1 xx1 zz)
-                    )))
-            (when (not (= 0 bb6))
-              (rgb-times
-                (if (and (= 2 zz)
-                         (or (= (logand yy1 #b111) (logand xx1 #b111))
-                             (= 0 (logand yy1 #b111))
-                             (= 0 (logand xx1 #b111))))
-                    255
-                    ;; else
-                    (aref new yy1 xx1 zz)
-                    )))
-            )))
-      new))
 #+END_SRC
 
 * Edge detector
