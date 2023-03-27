@@ -982,8 +982,8 @@ How to make screenshot:
             ;; else - return image array
             (zpng:data-array image)))))
 
-  (x-snapshot
-   :path "x-snapshot-true-color-telegram.png")
+  ;; (x-snapshot
+  ;;  :path "x-snapshot-true-color-telegram.png")
 #+END_SRC
 
 * Conv8x8
@@ -1576,7 +1576,7 @@ Implemenation
   ;; launcher
 
   (defun launcher ()
-    (let ((img (with-open-file (input "antalya.png" :element-type '(unsigned-byte 8))
+    (let ((img (with-open-file (input "snapshot.png" :element-type '(unsigned-byte 8))
                  (png:decode input)))
           (dir (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym))))))
       (multiple-value-bind (packflag packline height width channels bit-depth)
@@ -1630,8 +1630,12 @@ Implemenation
           ;;                channels bit-depth img)
           ))))
 
-  (time
-   (launcher))
+
+  (defun core-main ()
+    (time
+     (progn
+       (x-snapshot :path "snapshot.png")
+       (launcher))))
 
 
   ;; (maximin (loop for cur-edge in edges
@@ -2429,6 +2433,8 @@ http://algolist.ru/graphics/fill.php
 * Dbg assembly
 
 #+BEGIN_SRC lisp :tangle ./run.lisp :noweb yes :exports code
+  <<x_snapshot>>
+
   <<conv_8x8>>
 
   <<re_conv_8x8>>
