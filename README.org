@@ -1537,15 +1537,16 @@ Implemenation
                                    (setf prev flag))))))))
                    (reverse ret-candidates)))
                (remove-from-candidates (list-of-points rest-of-candidates)
-                 (loop for pnt in list-of-points do
+                 (loop for edge-pnt in list-of-points do
                    (setf rest-of-candidates ;; delete really faster them remove
-                         (delete pnt rest-of-candidates
-                                 :test #'(lambda (edge-pnt cand-pnt)
-                                           (and
-                                            (equalp (edge-pnt-y edge-pnt)
-                                                    (pnt-y cand-pnt))
-                                            (equalp (edge-pnt-x edge-pnt)
-                                                    (pnt-x cand-pnt))))))))
+                         (delete-if #'(lambda (cand-pnt)
+                                        (and
+                                         (equalp (edge-pnt-y edge-pnt)
+                                                 (pnt-y cand-pnt))
+                                         (equalp (edge-pnt-x edge-pnt)
+                                                 (pnt-x cand-pnt))))
+                                    rest-of-candidates)))
+                 rest-of-candidates)
                (rec-elim (candidates)
                  ;; Поиск краев фигуры, начиная от затравки с последующим
                  ;; удалением всех точек краев из остатка списка кандидатов
@@ -1561,7 +1562,8 @@ Implemenation
                        ;; края фигуры (cur-edge). Так как по определению края ищутся
                        ;; начиная с каждой точки-кандидата было бы избыточно удалять
                        ;; из кандидатов все точки заливки (cur-full)
-                       (remove-from-candidates cur-edge rest-of-candidates)
+                       (setf rest-of-candidates
+                             (remove-from-candidates cur-edge rest-of-candidates))
                        ;; (print (length rest-of-candidates))
                        ;; Хвостовая рекурсия
                        (rec-elim rest-of-candidates)))))
@@ -1573,69 +1575,92 @@ Implemenation
         (reverse edges))))
 
 
+  (defun edge-visualization (edges new height width)
+    (labels ((fence (it max)
+               (when (< it  0)
+                 (setf it 0))
+               (when (> it (- max 1))
+                 (setf it (- max 1)))
+               it)
+             (plot (yy xx rr gg bb)
+               (setf (aref new (fence yy height) (fence xx width) 0) rr)
+               (setf (aref new (fence yy height) (fence xx width) 1) gg)
+               (setf (aref new (fence yy height) (fence xx width) 2) bb)))
+      (loop for edge in edges do
+        (loop for edge-pnt in edge do
+          (loop for off from 0 to 7 do
+            (let ((yy (ash (edge-pnt-y edge-pnt) 3))
+                  (xx (ash (edge-pnt-x edge-pnt) 3)))
+              (ecase (edge-pnt-d edge-pnt)
+                (:tr (progn
+                       (loop for off from 0 to 7 do
+                         (plot yy (+ xx off) 255 0 0))
+                       (loop for off from 1 to 3 do
+                         (plot (+ yy off) (- (+ xx 7) off) 255 0 0))))
+                (:tl (progn
+                       (loop for off from 0 to 7 do
+                         (plot (+ yy 7) (+ xx off) 0 0 255))
+                       (loop for off from 4 to 6 do
+                         (plot (+ yy off) (- (+ xx 7) off) 0 0 255))))
+                (:tu (progn
+                       (loop for off from 0 to 7 do
+                         (plot (+ yy off) xx 0 255 0))
+                       (loop for off from 1 to 3 do
+                         (plot (+ yy off) (+ xx off) 0 255 0))))
+                (:td (progn
+                       (loop for off from 0 to 7 do
+                         (plot (+ yy off) (+ xx 7) 0 255 255))
+                       (loop for off from 4 to 6 do
+                         (plot (+ yy off) (+ xx off) 0 255 255))))))))))
+    new)
+
+
   ;; launcher
 
-  (defun launcher ()
-    (let ((img (with-open-file (input "snapshot.png" :element-type '(unsigned-byte 8))
+  (defun launcher (filename)
+    (let ((img (with-open-file (input filename :element-type '(unsigned-byte 8))
                  (png:decode input)))
           (dir (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym))))))
       (multiple-value-bind (packflag packline height width channels bit-depth)
           (conv-8x8 img)
         (let* ((edges (find-edges packflag height width)) ;; Находим все границы фигур
-               (new (re-conv-8x8 packflag packline height width channels bit-depth img)))
-          (labels ((fence (it max)
-                     (when (< it  0)
-                       (setf it 0))
-                     (when (> it (- max 1))
-                       (setf it (- max 1)))
-                     it)
-                   (plot (yy xx rr gg bb)
-                     (setf (aref new (fence yy height) (fence xx width) 0) rr)
-                     (setf (aref new (fence yy height) (fence xx width) 1) gg)
-                     (setf (aref new (fence yy height) (fence xx width) 2) bb)))
-            (loop for edge in edges do
-              (loop for edge-pnt in edge do
-                (loop for off from 0 to 7 do
-                  (let ((yy (ash (edge-pnt-y edge-pnt) 3))
-                        (xx (ash (edge-pnt-x edge-pnt) 3)))
-                    (ecase (edge-pnt-d edge-pnt)
-                      (:tr (progn
-                             (loop for off from 0 to 7 do
-                               (plot yy (+ xx off) 255 0 0))
-                             (loop for off from 1 to 3 do
-                               (plot (+ yy off) (- (+ xx 7) off) 255 0 0))))
-                      (:tl (progn
-                             (loop for off from 0 to 7 do
-                               (plot (+ yy 7) (+ xx off) 0 0 255))
-                             (loop for off from 4 to 6 do
-                               (plot (+ yy off) (- (+ xx 7) off) 0 0 255))))
-                      (:tu (progn
-                             (loop for off from 0 to 7 do
-                               (plot (+ yy off) xx 0 255 0))
-                             (loop for off from 1 to 3 do
-                               (plot (+ yy off) (+ xx off) 0 255 0))))
-                      (:td (progn
-                             (loop for off from 0 to 7 do
-                               (plot (+ yy off) (+ xx 7) 0 255 255))
-                             (loop for off from 4 to 6 do
-                               (plot (+ yy off) (+ xx off) 0 255 255))))))))))
-          ;; save
-          (with-open-file (output
-                           (format nil "~A/~A+.png" dir (symbol-name (gensym)))
-                           :element-type '(unsigned-byte 8)
-                           :direction :output :if-exists :supersede)
-            (png:encode new output))
+               (edges-ht (make-hash-table :size (length edges) :test #'equalp)))
+          (loop for edge in (remove-if #'(lambda (edge) (> 16 (length edge))) edges) do
+            (let ((unic-edge-pnts (sort (remove-duplicates
+                                         (mapcar #'(lambda (edge-pnt)
+                                                     (cons (edge-pnt-y edge-pnt)
+                                                           (edge-pnt-x edge-pnt)))
+                                                 edge))
+                                        #'(lambda (a b)
+                                            (if (= (car a) (car b))
+                                                (> (cdr a) (cdr b))
+                                                (= (car a) (car b)))))))
+              ;; (print unic-edge-pnts)
+              (setf (gethash unic-edge-pnts edges-ht) edge)))
+          ;; (print (hash-table-count edges-ht))
+          (loop for edge-key being the hash-keys of edges-ht using (hash-value edge) do
+            (let ((new (re-conv-8x8 packflag packline height width channels bit-depth img)))
+              (setf new (edge-visualization (list edge) new height width))
+              ;; save
+              (with-open-file (output
+                               (format nil "~A/~A+.png" dir (symbol-name (gensym)))
+                               :element-type '(unsigned-byte 8)
+                               :direction :output :if-exists :supersede)
+                (png:encode new output))))
           ;; (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
           ;;                packflag packline height width
           ;;                channels bit-depth img)
           ))))
 
+  (time
+   (launcher "antalya.png"))
 
-  (defun core-main ()
-    (time
-     (progn
-       (x-snapshot :path "snapshot.png")
-       (launcher))))
+
+  ;; (defun core-main ()
+  ;;   (time
+  ;;    (progn
+  ;;      (x-snapshot :path "snapshot.png")
+  ;;      (launcher "snapshot.png"))))
 
 
   ;; (maximin (loop for cur-edge in edges

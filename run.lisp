@@ -865,8 +865,8 @@
 
 ;; launcher
 
-(defun launcher ()
-  (let ((img (with-open-file (input "snapshot.png" :element-type '(unsigned-byte 8))
+(defun launcher (filename)
+  (let ((img (with-open-file (input filename :element-type '(unsigned-byte 8))
                (png:decode input)))
         (dir (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym))))))
     (multiple-value-bind (packflag packline height width channels bit-depth)
@@ -921,11 +921,15 @@
         ))))
 
 
-(defun core-main ()
-  (time
-   (progn
-     (x-snapshot :path "snapshot.png")
-     (launcher))))
+(time
+ (launcher "antalya.png"))
+
+
+;; (defun core-main ()
+;;   (time
+;;    (progn
+;;      (x-snapshot :path "snapshot.png")
+;;      (launcher "snapshot.png"))))
 
 
 ;; (maximin (loop for cur-edge in edges
