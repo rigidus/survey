@@ -1615,6 +1615,40 @@ Implemenation
     new)
 
 
+  (defun get-xy-pair (edge-pnt)
+    (cons (edge-pnt-y edge-pnt)
+          (edge-pnt-x edge-pnt)))
+
+
+  (defun get-edge-ht-keys (edge)
+    (sort (remove-duplicates
+           (mapcar #'get-xy-pair edge))
+          #'(lambda (a b)
+              (if (= (car a) (car b))
+                  (> (cdr a) (cdr b))
+                  (= (car a) (car b))))))
+
+
+  (defun frame-factor (edge)
+    (let ((ht (make-hash-table :test #'equalp)))
+      (loop for edge-pnt in edge :do
+        (let ((key (get-xy-pair edge-pnt)))
+          (multiple-value-bind (value present)
+              (gethash key ht)
+            (if present
+                (setf (gethash key ht)
+                      (push (edge-pnt-d edge-pnt) value))
+                ;; else
+                (setf (gethash key ht)
+                      (list (edge-pnt-d edge-pnt)))))))
+      (let ((single 0)  (multi  0))
+        (loop for key being the hash-keys of ht using (hash-value val) do
+          (if (= 1 (length val))
+              (incf single)
+              (incf multi)))
+        (floor multi single))))
+
+
   ;; launcher
 
   (defun launcher (filename)
@@ -1625,19 +1659,11 @@ Implemenation
           (conv-8x8 img)
         (let* ((edges (find-edges packflag height width)) ;; Находим все границы фигур
                (edges-ht (make-hash-table :size (length edges) :test #'equalp)))
+          ;; to ht
           (loop for edge in (remove-if #'(lambda (edge) (> 16 (length edge))) edges) do
-            (let ((unic-edge-pnts (sort (remove-duplicates
-                                         (mapcar #'(lambda (edge-pnt)
-                                                     (cons (edge-pnt-y edge-pnt)
-                                                           (edge-pnt-x edge-pnt)))
-                                                 edge))
-                                        #'(lambda (a b)
-                                            (if (= (car a) (car b))
-                                                (> (cdr a) (cdr b))
-                                                (= (car a) (car b)))))))
-              ;; (print unic-edge-pnts)
-              (setf (gethash unic-edge-pnts edges-ht) edge)))
-          ;; (print (hash-table-count edges-ht))
+            (if (= 0 (frame-factor edge)) ;; remove frames
+                (setf (gethash (get-edge-ht-keys edge) edges-ht) edge)))
+          ;; from ht
           (loop for edge-key being the hash-keys of edges-ht using (hash-value edge) do
             (let ((new (re-conv-8x8 packflag packline height width channels bit-depth img)))
               (setf new (edge-visualization (list edge) new height width))
@@ -1807,7 +1833,6 @@ Implemenation
 
   ;; TODO:
   ;; слить соседние фигуры
-  ;;   - удаление рамок - рамки имеют проход в прямом и обратном направлении для одних и тех же точек
   ;;   - сделать алгоритм поиска соседних блоков
   ;;   - сделать алгоритм слияния
   ;; отправить в тессеракт
