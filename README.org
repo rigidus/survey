@@ -1659,15 +1659,15 @@ Implemenation
           (conv-8x8 img)
         (let* ((edges (find-edges packflag height width))) ;; Находим все границы фигур
           (loop for edge in (remove-if #'(lambda (edge) (> 16 (length edge))) edges) do
-            (if (= 0 (frame-factor edge)) ;; remove frames
-                (let ((new (re-conv-8x8 packflag packline height width channels bit-depth img)))
-                  (setf new (edge-visualization (list edge) new height width))
-                  ;; save
-                  (with-open-file (output
-                                   (format nil "~A/~A+.png" dir (symbol-name (gensym)))
-                                   :element-type '(unsigned-byte 8)
-                                   :direction :output :if-exists :supersede)
-                    (png:encode new output)))))
+            (when (= 0 (frame-factor edge)) ;; remove frames
+              (let ((new (re-conv-8x8 packflag packline height width channels bit-depth img)))
+                (setf new (edge-visualization (list edge) new height width))
+                ;; save
+                (with-open-file (output
+                                 (format nil "~A/~A+.png" dir (symbol-name (gensym)))
+                                 :element-type '(unsigned-byte 8)
+                                 :direction :output :if-exists :supersede)
+                  (png:encode new output)))))
           ;; (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
           ;;                packflag packline height width
           ;;                channels bit-depth img)
