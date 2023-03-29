@@ -513,7 +513,7 @@
 ;; (border-test)
 
 (ql:quickload "alexandria")
-(ql:quickload "cl-tesseract")
+;; (ql:quickload "cl-tesseract")
 
 ;; (declaim (OPTIMIZE (SPEED 3) #|(SAFETY 0)|# ))
 
@@ -957,47 +957,88 @@
       (let* ((edges ;; Находим все границы фигур и удаляем найденные рамки из них
                (remove-if-not #'zero-frame-factor-p
                               (find-edges packflag height width)))
-             (l-edges
-               (mapcar #'(lambda (edge)
+             (l-edges ;; Для каждой каймы здесь оставляем только левый край
+               (mapcar #'(lambda (edge) ;; - это точки с направленем вверх
                            (remove-if-not #'(lambda (edge-pnt)
                                               (equal :tu (edge-pnt-d edge-pnt)))
                                           edge))
                        edges))
-             (r-edges
-               (mapcar #'(lambda (edge)
+             (r-edges ;; Для каждой каймы здесь оставляем только правый край
+               (mapcar #'(lambda (edge) ;;  - это точки с направлением вниз
                            (remove-if-not #'(lambda (edge-pnt)
                                               (equal :td (edge-pnt-d edge-pnt)))
                                           edge))
-                       edges)))
+                       edges))
+             (junctions))
+        ;; Для каждого из левых краев получаем край справа (от левого блока)
         (loop for r-edge in l-edges for r-idx from 0 do
+          ;; Для каждого из правых краев получаем край слева (от правого блока)
           (loop for l-edge in r-edges for l-idx from 0 do
+            ;; Если удалось сопоставить точки которые лежат на одной горизонтали
             (when (block edge-match
+                    ;; (а для этого мы сопоставляем поточечно, и если находим
+                    ;; хотя бы одну пару соответстующих точек справа и слева
+                    ;; между которыми лежит одна точка фона,
+                    ;; то считаем что края совпали и дальше не проверяем
                     (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
                       (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
                         (when (and (= (edge-pnt-y r-edge-pnt) (edge-pnt-y l-edge-pnt))
                                    (= (edge-pnt-x r-edge-pnt) (+ (edge-pnt-x l-edge-pnt) 2)))
-                          (setf (aref packflag
-                                      (edge-pnt-y r-edge-pnt)
-                                      (edge-pnt-x r-edge-pnt))
-                                0)
-                          (setf (aref packline
-                                      (edge-pnt-y r-edge-pnt)
-                                      (edge-pnt-x r-edge-pnt)
-                                      0)
-                                255)
-                          (setf (aref packflag
-                                      (edge-pnt-y r-edge-pnt)
-                                      (edge-pnt-x l-edge-pnt))
-                                0)
-                          (setf (aref packline
-                                      (edge-pnt-y r-edge-pnt)
-                                      (edge-pnt-x l-edge-pnt)
-                                      1)
-                                255)
+                          ;; Итак мы обнаружили две каймы, которым мешает объединится только
+                          ;; то что между ними есть квадрат цвета фона. Мы можем запомнить
+                          ;; их индексы, и координату разделяющей точки, чтобы выполнить
+                          ;; обьединение за пределами цикла
+                          (push (list l-idx r-idx (length l-edge) (length r-edge)
+                                      (make-pnt :y (edge-pnt-y r-edge-pnt)
+                                                :x (+ (edge-pnt-x l-edge-pnt) 1)))
+                                junctions)
+                          ;; Тут позже закомментим
+                          ;; (setf (aref packflag
+                          ;;             (edge-pnt-y r-edge-pnt)
+                          ;;             (edge-pnt-x r-edge-pnt))
+                          ;;       0)
+                          ;; (setf (aref packline
+                          ;;             (edge-pnt-y r-edge-pnt)
+                          ;;             (edge-pnt-x r-edge-pnt)
+                          ;;             0)
+                          ;;       255)
+                          ;; (setf (aref packflag
+                          ;;             (edge-pnt-y r-edge-pnt)
+                          ;;             (edge-pnt-x l-edge-pnt))
+                          ;;       0)
+                          ;; (setf (aref packline
+                          ;;             (edge-pnt-y r-edge-pnt)
+                          ;;             (edge-pnt-x l-edge-pnt)
+                          ;;             1)
+                          ;;       255)
                           (return-from edge-match t))))
+                    ;; Здесь мы оказываемся, если для этих edges ничего не нашли
+                    ;; Тогда ищем дальше, для следующих точек в цикле
                     nil)
               (format t "~%  ~A <==> ~A | ~A >--< ~A ~%"
                       r-idx l-idx (length r-edge) (length l-edge)))))
+        ;; Итак у нас есть junctions
+        ;; Осталось слить Edges по их номерам, а потом выполнить заливку
+        (loop for jun in junctions :do
+          (destructuring-bind (l-idx r-idx r-len l-len jp)
+              jun
+            (format t "~%  ~A <==> ~A | ~A >--< ~A ~%"
+                    r-idx l-idx l-len r-len)
+            (setf (aref packflag (pnt-y jp) (- (pnt-x jp) 1)) 63)
+            (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 0) 255)
+            (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 1) 255)
+            (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 2) 0)
+            ;;
+            (setf (aref packflag (pnt-y jp) (pnt-x jp)) 63)
+            (setf (aref packline (pnt-y jp) (pnt-x jp) 0) 0)
+            (setf (aref packline (pnt-y jp) (pnt-x jp) 1) 255)
+            (setf (aref packline (pnt-y jp) (pnt-x jp) 2) 255)
+            ;;
+            (setf (aref packflag (pnt-y jp) (+ (pnt-x jp) 1)) 63)
+            (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 0) 255)
+            (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 1) 0)
+            (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 2) 255)
+            ))
         (loop for edge in edges do
           (let ((new (re-conv-8x8 packflag packline height width channels bit-depth img)))
             (setf new (edge-visualization (list edge) new height width))
@@ -1012,8 +1053,8 @@
         ;;                channels bit-depth img)
         ))))
 
-;; (time
-;;  (launcher "antalya.png"))
+(time
+ (launcher "antalya.png"))
 
 
 (defun core-main ()
@@ -1169,7 +1210,7 @@
 
 ;; TODO:
 ;; слить соседние фигуры
-;;   - сделать алгоритм поиска соседних блоков
 ;;   - сделать алгоритм слияния
+;;   - заливка блоков
 ;; отправить в тессеракт
 ;; получить распознанные блоки и их координаты
