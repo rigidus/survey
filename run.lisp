@@ -51,7 +51,7 @@
           *default-x* 0
           *default-y* 0)))
 
-(init-defaults)
+;; (init-defaults)
 
 (defun raw-image->png (data width height)
   (let* ((png (make-instance 'zpng:png :width width :height height
@@ -1012,15 +1012,17 @@
         ;;                channels bit-depth img)
         ))))
 
-(time
- (launcher "antalya.png"))
+;; (time
+;;  (launcher "antalya.png"))
 
 
-;; (defun core-main ()
-;;   (time
-;;    (progn
-;;      (x-snapshot :path "snapshot.png")
-;;      (launcher "snapshot.png"))))
+(defun core-main ()
+  (time
+   (progn
+     (init-defaults)
+     (x-snapshot :path "snapshot.png")
+     ;; (launcher "snapshot.png")
+     )))
 
 
 ;; (maximin (loop for cur-edge in edges
