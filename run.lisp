@@ -1061,7 +1061,7 @@
   (time
    (progn
      (init-defaults)
-     (x-snapshot :path "snapshot.png")
+     (x-snapshot :path "out/snapshot.png")
      ;; (launcher "snapshot.png")
      )))
 

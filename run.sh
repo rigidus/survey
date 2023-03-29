@@ -9,7 +9,8 @@ ffmpeg \
   out.gif \
 ;
 
+docker build -t core --build-arg DISPLAY  .
 
 xauth extract - $DISPLAY > ~/.Xauthority
 
-docker run  -it --network=host --env DISPLAY=$DISPLAY  --privileged  --volume="$HOME/.Xauthority:/root/.Xauthority:rw"  -v /tmp/.X11-unix:/tmp/.X11-unix --rm core
+docker run  -it --network=host --env DISPLAY=$DISPLAY  --privileged  --volume="$HOME/.Xauthority:/root/.Xauthority:rw"  -v /tmp/.X11-unix:/tmp/.X11-unix --rm -v ${HOME}/out:/survey/out core
