@@ -827,15 +827,16 @@
                                  (setf prev flag))))))))
                  (reverse ret-candidates)))
              (remove-from-candidates (list-of-points rest-of-candidates)
-               (loop for pnt in list-of-points do
+               (loop for edge-pnt in list-of-points do
                  (setf rest-of-candidates ;; delete really faster them remove
-                       (delete pnt rest-of-candidates
-                               :test #'(lambda (edge-pnt cand-pnt)
-                                         (and
-                                          (equalp (edge-pnt-y edge-pnt)
-                                                  (pnt-y cand-pnt))
-                                          (equalp (edge-pnt-x edge-pnt)
-                                                  (pnt-x cand-pnt))))))))
+                       (delete-if #'(lambda (cand-pnt)
+                                      (and
+                                       (equalp (edge-pnt-y edge-pnt)
+                                               (pnt-y cand-pnt))
+                                       (equalp (edge-pnt-x edge-pnt)
+                                               (pnt-x cand-pnt))))
+                                  rest-of-candidates)))
+               rest-of-candidates)
              (rec-elim (candidates)
                ;; Поиск краев фигуры, начиная от затравки с последующим
                ;; удалением всех точек краев из остатка списка кандидатов
@@ -851,7 +852,8 @@
                      ;; края фигуры (cur-edge). Так как по определению края ищутся
                      ;; начиная с каждой точки-кандидата было бы избыточно удалять
                      ;; из кандидатов все точки заливки (cur-full)
-                     (remove-from-candidates cur-edge rest-of-candidates)
+                     (setf rest-of-candidates
+                           (remove-from-candidates cur-edge rest-of-candidates))
                      ;; (print (length rest-of-candidates))
                      ;; Хвостовая рекурсия
                      (rec-elim rest-of-candidates)))))
@@ -863,7 +865,88 @@
       (reverse edges))))
 
 
+(defun edge-visualization (edges new height width)
+  (labels ((fence (it max)
+             (when (< it  0)
+               (setf it 0))
+             (when (> it (- max 1))
+               (setf it (- max 1)))
+             it)
+           (plot (yy xx rr gg bb)
+             (setf (aref new (fence yy height) (fence xx width) 0) rr)
+             (setf (aref new (fence yy height) (fence xx width) 1) gg)
+             (setf (aref new (fence yy height) (fence xx width) 2) bb)))
+    (loop for edge in edges do
+      (loop for edge-pnt in edge do
+        (loop for off from 0 to 7 do
+          (let ((yy (ash (edge-pnt-y edge-pnt) 3))
+                (xx (ash (edge-pnt-x edge-pnt) 3)))
+            (ecase (edge-pnt-d edge-pnt)
+              (:tr (progn
+                     (loop for off from 0 to 7 do
+                       (plot yy (+ xx off) 255 0 0))
+                     (loop for off from 1 to 3 do
+                       (plot (+ yy off) (- (+ xx 7) off) 255 0 0))))
+              (:tl (progn
+                     (loop for off from 0 to 7 do
+                       (plot (+ yy 7) (+ xx off) 0 0 255))
+                     (loop for off from 4 to 6 do
+                       (plot (+ yy off) (- (+ xx 7) off) 0 0 255))))
+              (:tu (progn
+                     (loop for off from 0 to 7 do
+                       (plot (+ yy off) xx 0 255 0))
+                     (loop for off from 1 to 3 do
+                       (plot (+ yy off) (+ xx off) 0 255 0))))
+              (:td (progn
+                     (loop for off from 0 to 7 do
+                       (plot (+ yy off) (+ xx 7) 0 255 255))
+                     (loop for off from 4 to 6 do
+                       (plot (+ yy off) (+ xx off) 0 255 255))))))))))
+  new)
+
+
+(defun get-xy-pair (edge-pnt)
+  (cons (edge-pnt-y edge-pnt)
+        (edge-pnt-x edge-pnt)))
+
+
+(defun get-edge-ht-keys (edge)
+  (sort (remove-duplicates
+         (mapcar #'get-xy-pair edge))
+        #'(lambda (a b)
+            (if (= (car a) (car b))
+                (> (cdr a) (cdr b))
+                (= (car a) (car b))))))
+
+
+(defun zero-frame-factor-p (edge)
+  (let ((ht (make-hash-table :test #'equalp)))
+    (loop for edge-pnt in edge :do
+      (let ((key (get-xy-pair edge-pnt)))
+        (multiple-value-bind (value present)
+            (gethash key ht)
+          (if present
+              (setf (gethash key ht)
+                    (push (edge-pnt-d edge-pnt) value))
+              ;; else
+              (setf (gethash key ht)
+                    (list (edge-pnt-d edge-pnt)))))))
+    (let ((single 0)  (multi  0))
+      (loop for key being the hash-keys of ht using (hash-value val) do
+        (if (= 1 (length val))
+            (incf single)
+            (incf multi)))
+      (= 0 (floor multi single)))))
+
+
 ;; launcher
+
+(defun edge-mrg (r-idx l-idx)
+  (format t "~%  ~A <==> ~A ~%" r-idx l-idx))
+
+(defun edge-match (r-edge l-edge r-idx l-idx)
+
+  nil)
 
 (defun launcher (filename)
   (let ((img (with-open-file (input filename :element-type '(unsigned-byte 8))
@@ -871,55 +954,63 @@
         (dir (ensure-directories-exist (format nil "./~A/"  (symbol-name (gensym))))))
     (multiple-value-bind (packflag packline height width channels bit-depth)
         (conv-8x8 img)
-      (let* ((edges (find-edges packflag height width)) ;; Находим все границы фигур
-             (new (re-conv-8x8 packflag packline height width channels bit-depth img)))
-        (labels ((fence (it max)
-                   (when (< it  0)
-                     (setf it 0))
-                   (when (> it (- max 1))
-                     (setf it (- max 1)))
-                   it)
-                 (plot (yy xx rr gg bb)
-                   (setf (aref new (fence yy height) (fence xx width) 0) rr)
-                   (setf (aref new (fence yy height) (fence xx width) 1) gg)
-                   (setf (aref new (fence yy height) (fence xx width) 2) bb)))
-          (loop for edge in edges do
-            (loop for edge-pnt in edge do
-              (loop for off from 0 to 7 do
-                (let ((yy (ash (edge-pnt-y edge-pnt) 3))
-                      (xx (ash (edge-pnt-x edge-pnt) 3)))
-                  (ecase (edge-pnt-d edge-pnt)
-                    (:tr (progn
-                           (loop for off from 0 to 7 do
-                             (plot yy (+ xx off) 255 0 0))
-                           (loop for off from 1 to 3 do
-                             (plot (+ yy off) (- (+ xx 7) off) 255 0 0))))
-                    (:tl (progn
-                           (loop for off from 0 to 7 do
-                             (plot (+ yy 7) (+ xx off) 0 0 255))
-                           (loop for off from 4 to 6 do
-                             (plot (+ yy off) (- (+ xx 7) off) 0 0 255))))
-                    (:tu (progn
-                           (loop for off from 0 to 7 do
-                             (plot (+ yy off) xx 0 255 0))
-                           (loop for off from 1 to 3 do
-                             (plot (+ yy off) (+ xx off) 0 255 0))))
-                    (:td (progn
-                           (loop for off from 0 to 7 do
-                             (plot (+ yy off) (+ xx 7) 0 255 255))
-                           (loop for off from 4 to 6 do
-                             (plot (+ yy off) (+ xx off) 0 255 255))))))))))
-        ;; save
-        (with-open-file (output
-                         (format nil "~A/~A+.png" dir (symbol-name (gensym)))
-                         :element-type '(unsigned-byte 8)
-                         :direction :output :if-exists :supersede)
-          (png:encode new output))
+      (let* ((edges ;; Находим все границы фигур и удаляем найденные рамки из них
+               (remove-if-not #'zero-frame-factor-p
+                              (find-edges packflag height width)))
+             (l-edges
+               (mapcar #'(lambda (edge)
+                           (remove-if-not #'(lambda (edge-pnt)
+                                              (equal :tu (edge-pnt-d edge-pnt)))
+                                          edge))
+                       edges))
+             (r-edges
+               (mapcar #'(lambda (edge)
+                           (remove-if-not #'(lambda (edge-pnt)
+                                              (equal :td (edge-pnt-d edge-pnt)))
+                                          edge))
+                       edges)))
+        (loop for r-edge in l-edges for r-idx from 0 do
+          (loop for l-edge in r-edges for l-idx from 0 do
+            (when (block edge-match
+                    (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
+                      (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
+                        (when (and (= (edge-pnt-y r-edge-pnt) (edge-pnt-y l-edge-pnt))
+                                   (= (edge-pnt-x r-edge-pnt) (+ (edge-pnt-x l-edge-pnt) 2)))
+                          (setf (aref packflag
+                                      (edge-pnt-y r-edge-pnt)
+                                      (edge-pnt-x r-edge-pnt))
+                                0)
+                          (setf (aref packline
+                                      (edge-pnt-y r-edge-pnt)
+                                      (edge-pnt-x r-edge-pnt)
+                                      0)
+                                255)
+                          (setf (aref packflag
+                                      (edge-pnt-y r-edge-pnt)
+                                      (edge-pnt-x l-edge-pnt))
+                                0)
+                          (setf (aref packline
+                                      (edge-pnt-y r-edge-pnt)
+                                      (edge-pnt-x l-edge-pnt)
+                                      1)
+                                255)
+                          (return-from edge-match t))))
+                    nil)
+              (format t "~%  ~A <==> ~A | ~A >--< ~A ~%"
+                      r-idx l-idx (length r-edge) (length l-edge)))))
+        (loop for edge in edges do
+          (let ((new (re-conv-8x8 packflag packline height width channels bit-depth img)))
+            (setf new (edge-visualization (list edge) new height width))
+            ;; save
+            (with-open-file (output
+                             (format nil "~A/~A+.png" dir (symbol-name (gensym)))
+                             :element-type '(unsigned-byte 8)
+                             :direction :output :if-exists :supersede)
+              (png:encode new output))))
         ;; (save-packflag (format nil "~A/~A+.png" dir (symbol-name (gensym)))
         ;;                packflag packline height width
         ;;                channels bit-depth img)
         ))))
-
 
 (time
  (launcher "antalya.png"))
@@ -1076,7 +1167,6 @@
 
 ;; TODO:
 ;; слить соседние фигуры
-;;   - удаление рамок - рамки имеют проход в прямом и обратном направлении для одних и тех же точек
 ;;   - сделать алгоритм поиска соседних блоков
 ;;   - сделать алгоритм слияния
 ;; отправить в тессеракт
