@@ -8,3 +8,8 @@ ffmpeg \
   -vf scale=512:-1 \
   out.gif \
 ;
+
+
+xauth extract - $DISPLAY > ~/.Xauthority
+
+docker run  -it --network=host --env DISPLAY=$DISPLAY  --privileged  --volume="$HOME/.Xauthority:/root/.Xauthority:rw"  -v /tmp/.X11-unix:/tmp/.X11-unix --rm core

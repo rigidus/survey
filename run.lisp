@@ -1053,8 +1053,8 @@
         ;;                channels bit-depth img)
         ))))
 
-(time
- (launcher "antalya.png"))
+;; (time
+;;  (launcher "antalya.png"))
 
 
 (defun core-main ()
