@@ -1648,11 +1648,112 @@ Implemenation
               (incf multi)))
         (= 0 (floor multi single)))))
 
-  ;; (defun edge-mrg (r-idx l-idx)
-  ;;   (format t "~%  ~A <==> ~A ~%" r-idx l-idx))
+  (defun find-junctions (edges)
+    (let* ((l-edges ;; Для каждой каймы здесь оставляем только левый край
+            (mapcar #'(lambda (edge) ;; - это точки с направленем вверх
+                        (remove-if-not #'(lambda (edge-pnt)
+                                           (equal :tu (edge-pnt-d edge-pnt)))
+                                       edge))
+                    edges))
+           (r-edges ;; Для каждой каймы здесь оставляем только правый край
+            (mapcar #'(lambda (edge) ;;  - это точки с направлением вниз
+                        (remove-if-not #'(lambda (edge-pnt)
+                                           (equal :td (edge-pnt-d edge-pnt)))
+                                       edge))
+                    edges))
+           (junctions))
+      ;; Для каждого из левых краев получаем край справа (от левого блока)
+      (loop for r-edge in l-edges for r-idx from 0 do
+         ;; Для каждого из правых краев получаем край слева (от правого блока)
+           (loop for l-edge in r-edges for l-idx from 0 do
+              ;; Если удалось сопоставить точки которые лежат на одной горизонтали
+                (when (block edge-match
+                        ;; (а для этого мы сопоставляем поточечно, и если находим
+                        ;; хотя бы одну пару соответствующих точек справа и слева
+                        ;; между которыми лежит одна точка фона,
+                        ;; то считаем что края совпали и дальше не проверяем
+                        (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
+                             (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
+                                  (when (and (= (edge-pnt-y r-edge-pnt) (edge-pnt-y l-edge-pnt))
+                                             (= (edge-pnt-x r-edge-pnt) (+ (edge-pnt-x l-edge-pnt) 2)))
+                                    ;; Итак мы обнаружили две каймы, которым мешает объединится только
+                                    ;; то что между ними есть квадрат цвета фона. Мы можем запомнить
+                                    ;; их индексы, и координату разделяющей точки, чтобы выполнить
+                                    ;; обьединение за пределами цикла
+                                    (push (list l-idx r-idx (length l-edge) (length r-edge)
+                                                (make-pnt :y (edge-pnt-y r-edge-pnt)
+                                                          :x (+ (edge-pnt-x l-edge-pnt) 1)))
+                                          junctions)
+                                    (return-from edge-match t))))
+                        ;; Здесь мы оказываемся, если для этих edges ничего не нашли
+                        ;; Тогда ищем дальше, для следующих точек в цикле
+                        nil))))
+      junctions))
+
 
 
   ;; launcher
+
+
+
+  ;; Граф, заданный списком пар смежности узлов
+  (defparameter *graph*
+    '((111 0) (110 110) (107 86) (106 90) (104 104) (103 91) (102 100) (99 97) (99 68) (95 84) (94 77) (93 93) (93 82) (93 81) (92 88) (91 91) (91 69) (90 90) (90 80) (89 89) (89 80) (88 78) (87 92) (87 78) (86 67) (80 80) (79 79) (75 75) (72 72) (70 70) (68 61) (67 0) (66 0) (51 42) (50 50) (48 48) (31 31) (30 30) (29 29) (17 15) (11 11) (9 9) (6 6) (5 5) (2 2) (1 1) (0 85) (0 59) (0 0)))
+
+  ;; Дублируем чтобы обходить как неориентированный
+  (defparameter *gra*
+    (remove-duplicates
+     (append *graph*
+             (mapcar #'(lambda (elt)
+                         (list (cadr elt) (car elt)))
+                     ,*graph*))))
+
+  ;; Определяем класс узла
+  (defclass node ()
+    ((id :accessor id :initarg :id)
+     (linked :accessor linked :initarg :linked)))
+
+  ;; Хэштаблица, где лежат ноды
+  (defparameter *nodes* (make-hash-table))
+
+  ;; Заполняем хэш-таблицу
+  (mapcar #'(lambda (elt)
+              (setf (gethash (car elt) *nodes*)
+                    (make-instance 'node
+                                   :id (car elt)
+                                   :linked nil)))
+          ,*gra*)
+
+  ;; Заполнение связями между узлами
+  (mapcar #'(lambda (elt)
+              (push (cadr elt)
+                    (linked (gethash (car elt) *nodes*))))
+          ,*gra*)
+
+  ;; Удаление дупликатов из связей и номера самого узла
+  (maphash #'(lambda (key val)
+               (setf (linked (gethash key *nodes*))
+                     (remove-duplicates
+                      (remove key
+                              (linked val)))))
+          ,*nodes*)
+
+
+  (maphash #'(lambda (key val)
+               (print (list key (linked val))))
+           ,*nodes*)
+
+  (defun fold-graph (node)
+    (when (linked node)
+      (loop for child in (linked node) do
+        (fold-graph child)))
+    (setf (density node)
+          (loop for child in (linked node)
+                summing (density child))))
+
+
+  ;; launcher
+
 
   (defun launcher (filename)
     (let ((img (with-open-file (input filename :element-type '(unsigned-byte 8))
@@ -1663,56 +1764,18 @@ Implemenation
         (let* ((edges ;; Находим все границы фигур и удаляем найденные рамки из них
                  (remove-if-not #'zero-frame-factor-p
                                 (find-edges packflag height width)))
-               (l-edges ;; Для каждой каймы здесь оставляем только левый край
-                 (mapcar #'(lambda (edge) ;; - это точки с направленем вверх
-                             (remove-if-not #'(lambda (edge-pnt)
-                                                (equal :tu (edge-pnt-d edge-pnt)))
-                                            edge))
-                         edges))
-               (r-edges ;; Для каждой каймы здесь оставляем только правый край
-                 (mapcar #'(lambda (edge) ;;  - это точки с направлением вниз
-                             (remove-if-not #'(lambda (edge-pnt)
-                                                (equal :td (edge-pnt-d edge-pnt)))
-                                            edge))
-                         edges))
-               (junctions)
+               (junctions (find-junctions edges))
                (pf-height (ash height -3))
                (pf-width  (ash width  -3)))
-          ;; Для каждого из левых краев получаем край справа (от левого блока)
-          (loop for r-edge in l-edges for r-idx from 0 do
-            ;; Для каждого из правых краев получаем край слева (от правого блока)
-            (loop for l-edge in r-edges for l-idx from 0 do
-              ;; Если удалось сопоставить точки которые лежат на одной горизонтали
-              (when (block edge-match
-                      ;; (а для этого мы сопоставляем поточечно, и если находим
-                      ;; хотя бы одну пару соответстующих точек справа и слева
-                      ;; между которыми лежит одна точка фона,
-                      ;; то считаем что края совпали и дальше не проверяем
-                      (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
-                        (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
-                          (when (and (= (edge-pnt-y r-edge-pnt) (edge-pnt-y l-edge-pnt))
-                                     (= (edge-pnt-x r-edge-pnt) (+ (edge-pnt-x l-edge-pnt) 2)))
-                            ;; Итак мы обнаружили две каймы, которым мешает объединится только
-                            ;; то что между ними есть квадрат цвета фона. Мы можем запомнить
-                            ;; их индексы, и координату разделяющей точки, чтобы выполнить
-                            ;; обьединение за пределами цикла
-                            (push (list l-idx r-idx (length l-edge) (length r-edge)
-                                        (make-pnt :y (edge-pnt-y r-edge-pnt)
-                                                  :x (+ (edge-pnt-x l-edge-pnt) 1)))
-                                  junctions)
-                            (return-from edge-match t))))
-                      ;; Здесь мы оказываемся, если для этих edges ничего не нашли
-                      ;; Тогда ищем дальше, для следующих точек в цикле
-                      nil)
-                (format t "~%  ~A <==> ~A | ~A >--< ~A ~%"
-                        r-idx l-idx (length r-edge) (length l-edge)))))
           ;; Итак у нас есть junctions
+          ;; (format t "~% ~A ~%" junctions)
           ;; Осталось слить Edges по их номерам, а потом выполнить заливку
           (loop for jun in junctions :do
             (destructuring-bind (l-idx r-idx r-len l-len jp)
                 jun
-              (format t "~%  ~A <==> ~A | ~A >--< ~A ~%"
-                      r-idx l-idx l-len r-len)
+              (format t "~%~A -> ~A;"  ;; | ~A >--< ~A
+                      r-idx l-idx ;; l-len r-len
+                      )
               (setf (aref packflag (pnt-y jp) (- (pnt-x jp) 1)) 63)
               (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 0) 255)
               (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 1) 255)
