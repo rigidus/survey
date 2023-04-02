@@ -938,47 +938,163 @@
             (incf multi)))
       (= 0 (floor multi single)))))
 
+
 (defun find-junctions (edges)
+  ;; Функция получает на вход список периметров, найденный в изображении
+  ;; и возвращает список пар смежности, где первые два элемента - это
+  ;; порядковые номера смежных периметров, а последний элемент - это
+  ;; структура PNT смежной точки
   (let* ((l-edges ;; Для каждой каймы здесь оставляем только левый край
-          (mapcar #'(lambda (edge) ;; - это точки с направленем вверх
-                      (remove-if-not #'(lambda (edge-pnt)
-                                         (equal :tu (edge-pnt-d edge-pnt)))
-                                     edge))
-                  edges))
+           (mapcar #'(lambda (edge) ;; - это точки с направленем вверх
+                       (remove-if-not #'(lambda (edge-pnt)
+                                          (equal :tu (edge-pnt-d edge-pnt)))
+                                      edge))
+                   edges))
          (r-edges ;; Для каждой каймы здесь оставляем только правый край
-          (mapcar #'(lambda (edge) ;;  - это точки с направлением вниз
-                      (remove-if-not #'(lambda (edge-pnt)
-                                         (equal :td (edge-pnt-d edge-pnt)))
-                                     edge))
-                  edges))
+           (mapcar #'(lambda (edge) ;;  - это точки с направлением вниз
+                       (remove-if-not #'(lambda (edge-pnt)
+                                          (equal :td (edge-pnt-d edge-pnt)))
+                                      edge))
+                   edges))
          (junctions))
     ;; Для каждого из левых краев получаем край справа (от левого блока)
     (loop for r-edge in l-edges for r-idx from 0 do
-       ;; Для каждого из правых краев получаем край слева (от правого блока)
-         (loop for l-edge in r-edges for l-idx from 0 do
-            ;; Если удалось сопоставить точки которые лежат на одной горизонтали
-              (when (block edge-match
-                      ;; (а для этого мы сопоставляем поточечно, и если находим
-                      ;; хотя бы одну пару соответствующих точек справа и слева
-                      ;; между которыми лежит одна точка фона,
-                      ;; то считаем что края совпали и дальше не проверяем
-                      (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
-                           (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
-                                (when (and (= (edge-pnt-y r-edge-pnt) (edge-pnt-y l-edge-pnt))
-                                           (= (edge-pnt-x r-edge-pnt) (+ (edge-pnt-x l-edge-pnt) 2)))
-                                  ;; Итак мы обнаружили две каймы, которым мешает объединится только
-                                  ;; то что между ними есть квадрат цвета фона. Мы можем запомнить
-                                  ;; их индексы, и координату разделяющей точки, чтобы выполнить
-                                  ;; обьединение за пределами цикла
-                                  (push (list l-idx r-idx (length l-edge) (length r-edge)
-                                              (make-pnt :y (edge-pnt-y r-edge-pnt)
-                                                        :x (+ (edge-pnt-x l-edge-pnt) 1)))
-                                        junctions)
-                                  (return-from edge-match t))))
-                      ;; Здесь мы оказываемся, если для этих edges ничего не нашли
-                      ;; Тогда ищем дальше, для следующих точек в цикле
-                      nil))))
+      ;; Для каждого из правых краев получаем край слева (от правого блока)
+      (loop for l-edge in r-edges for l-idx from 0 do
+        ;; Если удалось сопоставить точки которые лежат на одной горизонтали
+        (when
+            (block edge-match
+              ;; (а для этого мы сопоставляем поточечно, и если находим
+              ;; хотя бы одну пару соответствующих точек справа и слева
+              ;; между которыми лежит одна точка фона,
+              ;; то считаем что края совпали и дальше не проверяем
+              (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
+                (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
+                  (when (and (= (edge-pnt-y r-edge-pnt) (edge-pnt-y l-edge-pnt))
+                             (= (edge-pnt-x r-edge-pnt) (+ (edge-pnt-x l-edge-pnt) 2)))
+                    ;; Итак мы обнаружили две каймы, которым мешает объединится только
+                    ;; то что между ними есть квадрат цвета фона. Мы можем запомнить
+                    ;; их индексы, и координату разделяющей точки, чтобы выполнить
+                    ;; обьединение за пределами цикла
+                    (push (list l-idx r-idx (length l-edge) (length r-edge)
+                                (make-pnt :y (edge-pnt-y r-edge-pnt)
+                                          :x (+ (edge-pnt-x l-edge-pnt) 1)))
+                          junctions)
+                    (return-from edge-match t))))
+              ;; Здесь мы оказываемся, если для этих edges ничего не нашли
+              ;; Тогда ищем дальше, для следующих точек в цикле
+              nil))))
     junctions))
+
+
+(defun connlists (graph)
+  ;; построение списка списков вершин компонент связности
+  ;; graph - граф, представленный структурой смежности в
+  ;; виде ассоциативного списка
+  (connlsts graph nil))
+
+(defun connlsts (graph lists)
+  (cond ((null graph) lists)
+        (t (cond ((null (lmember (caar graph) lists))
+                  (connlsts
+                   (cdr graph)
+                   (cons (depthfirst graph (caar graph))
+                         lists)) )
+                 (t (connlsts (cdr graph) lists))))))
+
+(defun lmember (vertex lists)
+  ;; функция рекурсивно проверяет, содержится ли вершина vertex в
+  ;; каком-либо из списков, составляющих lists
+  (and lists
+       (or (member  vertex (car lists))
+           (lmember vertex (cdr lists)))))
+
+(defun depthfirst (graph root)
+  ;; обход графа в глубину:
+  ;; DEPTHFIRST вычисляет список вершин связной компоненты вершины ROOT
+  ;; graph - граф, представленный структурой смежности в
+  ;;         виде ассоциативного списка,
+  ;; root  - вершина, с которой начинается обход графа,
+  ;; результат: список вершин графа в порядке посещения в глубину
+  (cond ((null graph) nil)
+        (t (defi graph (list root) (list root)))))
+
+(defun defi (graph visited path)
+  ;; DeepFirstSearch - обход графа в глубину
+  ;; graph   - граф, представленный структурой смежности в
+  ;;           виде ассоциативного списка,
+  ;; visited - список уже посещенных вершин,
+  ;; path    - список вершин, определяющий путь посещения
+  (cond ((null path) (reverse visited))
+        (t (cond ((null (expnd graph visited (car path)))
+                  (defi graph visited (cdr path)))
+                 (t (defi graph
+                        (cons (expnd graph visited (car path))
+                              visited)
+                      (cons (expnd graph visited (car path))
+                            path)))))))
+
+(defun expnd (graph visited vertex)
+  ;; выбор в графе graph следующей еще не просмотренной
+  ;; вершины, смежной с вершиной vertex
+  (cond ((null (neighbour3 vertex graph)) nil)
+        (t (firstnotvisited visited (neighbour3 vertex graph)))))
+
+(defun firstnotvisited (visited vlist)
+  ;; поиск первой непосещенной вершины в списке vlist
+  ;; visited - список уже посещенных вершин
+  (cond ((null vlist) nil )
+        (t (cond ((null (member (car vlist) visited))
+                  (car vlist))
+                 (t (firstnotvisited visited (cdr vlist)))))))
+
+(defun neighbour3 (x graph)
+  ;; функция возвращает список вершин графа graph, смежных с
+  ;; вершиной x
+  (cond ((null (assoc x graph)) nil)
+        (t (cdr (assoc x graph)))))
+
+;; (connlists '((1 . (2 3)) (2 . (3)) (5 . ())))
+;; ((5) (1 2 3))
+;; (connlists '((1 . (2 3)) (2 . (3)) (5 . ()) (6 . ())))
+;; ((6) (5) (1 2 3))
+;; (connlists '((1 . (2 3)) (2 . (3)) (5 . (6))))
+;; ((5 6) (1 2 3))
+;; (connlists '((1 . (2 3 5)) (2 . (3)) (5 . (6))))
+;; ((1 2 3 5 6))
+
+(defun f2 (graph lst)
+  ;; построение структур смежности всех компонент связности
+  ;; graph - граф, представленный структурой смежности в
+  ;;         виде ассоциативного списка,
+  ;; lst   - список списков компонент связности
+  (cond ((null lst) nil )
+        (t  (cons (f1 graph (car lst))
+                  (f2 graph (cdr lst))))))
+
+(defun f1 (graph lst)
+  (cond ((null graph) nil)
+        ((member (caar graph) lst)
+         (cons (car graph) (f1 (cdr graph) lst)))
+        (t  (f1 (cdr graph) lst))))
+
+;; (f2 '((1 . (2 3)) (4 . (5 6)) (5 . (4)) (3 . (2 1)))
+;;       '((1 2 3) (4 5 6)))
+;; (((1 2 3) (3 2 1)) ((4 5 6) (5 4)))
+
+(defun adjacency-list (edges)
+  (let ((ht (make-hash-table))
+        (rs))
+    (dolist (edge edges)
+      (destructuring-bind (node1 . node2) edge
+        (push node2 (gethash node1 ht))
+        (unless (gethash node2 ht)
+          (setf (gethash node2 ht) nil))))
+    (maphash #'(lambda (key val)
+                 (push (cons key val) rs))
+             ht)
+    rs))
+
 
 ;; launcher
 
@@ -989,107 +1105,135 @@
     (multiple-value-bind (packflag packline height width channels bit-depth)
         (conv-8x8 img)
       (let* ((edges ;; Находим все границы фигур и удаляем найденные рамки из них
+               ;; рамки - это фигуры, которые состоят почти только из каймы
                (remove-if-not #'zero-frame-factor-p
                               (find-edges packflag height width)))
+             ;; находим точки соединения смежных фигур
              (junctions (find-junctions edges))
-             (pf-height (ash height -3))
-             (pf-width  (ash width  -3)))
+             ;; и строим по ним пары индексов смежных периметров
+             (adj-pairs (mapcar #'(lambda (jnk)
+                                     (cons (car jnk) (cadr jnk)))
+                                junctions))
+             ;; очищаем их от дублирующихся и самосмежных пар
+             (adj-pairs (remove-duplicates
+                         (remove-if #'(lambda (elt)
+                                        (= (car elt) (cdr elt)))
+                                    adj-pairs)))
+             ;; так как это ребра неориентированного графа, то нам
+             ;; нужно для каждого ребра создать обратное ему
+             (adj-pairs (let ((rs))
+                          (mapcar #'(lambda (elt)
+                                      (push elt rs)
+                                      (push (cons (cdr elt) (car elt)) rs))
+                                  adj-pairs)
+                          rs))
+             ;; чтобы получить из них список списков смежности
+             (adj-list (adjacency-list adj-pairs))
+             ;; и выделить компоненты связности
+             (conn-list (connlists adj-list))
+             ;; (pf-height (ash height -3))
+             ;; (pf-width  (ash width  -3))
+             )
         ;; Итак у нас есть junctions
-        (format t "~% ~A ~%" junctions)
-        ;; Осталось слить Edges по их номерам, а потом выполнить заливку
-        (loop for jun in junctions :do
-          (destructuring-bind (l-idx r-idx r-len l-len jp)
-              jun
-            (format t "~%  ~A <==> ~A | ~A >--< ~A ~%"
-                    r-idx l-idx l-len r-len)
-            (setf (aref packflag (pnt-y jp) (- (pnt-x jp) 1)) 63)
-            (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 0) 255)
-            (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 1) 255)
-            (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 2) 0)
-            ;;
-            (setf (aref packflag (pnt-y jp) (pnt-x jp)) 63)
-            (setf (aref packline (pnt-y jp) (pnt-x jp) 0) 0)
-            (setf (aref packline (pnt-y jp) (pnt-x jp) 1) 255)
-            (setf (aref packline (pnt-y jp) (pnt-x jp) 2) 255)
-            ;;
-            (setf (aref packflag (pnt-y jp) (+ (pnt-x jp) 1)) 63)
-            (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 0) 255)
-            (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 1) 0)
-            (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 2) 255)
-            ))
-        ;; (loop for edge-idx from 0 to for cur-edge in edges do
-        (let* ((edge-idx 69) ;; dbg instead of loop
-               (cur-edge (nth edge-idx edges)))
-          (let* ((filename (format nil "~A" edge-idx))
-                 (filepath (format nil "~A/~A.png" dir filename))
-                 ;; (new (re-conv-8x8 packflag packline height width channels bit-depth img))
-                 ;; (new (edge-visualization (list cur-edge) new height width))
-                 ;; (new (with-open-file (output
-                 ;;                       filepath
-                 ;;                       :element-type '(unsigned-byte 8)
-                 ;;                       :direction :output :if-exists :supersede)
-                 ;;        (png:encode new output)))
-                 (candidate (get-xy-pair (car cur-edge)))
-                 (cur-fill ;; в процесе заливки сам расставляет признаки
-                   (fill-8x8 candidate pf-height pf-width packflag #b10000000 t))
-                 ;; (new-packflag
-                 ;;   (make-array `(,pf-height ,pf-width)
-                 ;;               :element-type 'fixnum :initial-element 0))
-                 ;; (new-packline
-                 ;;   (make-array `(,pf-height ,pf-width ,channels)
-                 ;;               :element-type '(unsigned-byte 8)
-                 ;;               :initial-element 0))
-                 ;; (ys (mapcar #'edge-pnt-y cur-edge))
-                 ;; (xs (mapcar #'edge-pnt-y cur-edge))
-                 ;; (y-min (reduce #'min ys))
-                 ;; (x-min (reduce #'min xs))
-                 ;; (y-max (reduce #'max ys))
-                 ;; (x-max (reduce #'max xs))
-                 ;; (y-size (+ 1 (- y-max y-min)))
-                 ;; (x-size (+ 1 (- x-max x-min)))
-                 ;; (new-img  (png:make-image (ash y-size 3) (ash x-size 3)
-                 ;;                           channels bit-depth))
-                 )
-            ;; new-packflag, new-packline
-            ;; (do* ((yy 0  (+ 1 yy)))
-            ;;      ((>= yy y-size))
-            ;;   (declare (type fixnum yy))
-            ;;   (do* ((xx 0  (+ 1 xx)))
-            ;;        ((>= xx x-size))
-            ;;     (declare (type fixnum xx))
-            ;;     (setf (aref new-packflag yy xx)
-            ;;           (aref packflag (+ yy y-min) (+ xx x-min)))
-            ;;     (dotimes (zz channels)
-            ;;       (setf (aref new-packline yy xx zz)
-            ;;             (aref packline (+ yy y-min) (+ xx x-min) zz)))))
-            ;; new-img
-            ;; (let ((y-start (ash y-min 3))
-            ;;       (x-start (ash x-min 3)))
-            ;;   (do* ((yy 0  (+ 1 yy)))
-            ;;        ((>= yy (ash y-size 3)))
-            ;;     (declare (type fixnum yy))
-            ;;     (do* ((xx 0 (+ 1 xx)))
-            ;;          ((>= xx (ash x-size 3)))
-            ;;       (declare (type fixnum xx))
-            ;;       (dotimes (zz channels)
-            ;;         (setf (aref new-img yy xx zz)
-            ;;               (aref img
-            ;;                     (+ yy y-start)
-            ;;                     (+ xx x-start)
-            ;;                     zz))))))
-            ;; (save-packflag filepath
-            ;;                new-packflag new-packline (ash y-size 3) (ash x-size 3)
-            ;;                channels bit-depth new-img)
-            ))
-        (save-packflag (format nil "~A/ALL-~A.png" dir (symbol-name (gensym)))
-                       packflag packline height width
-                       channels bit-depth img)
-        ))))
+        conn-list))))
+
+        ;; ;; Осталось слить Edges по их номерам, а потом выполнить заливку
+        ;; (loop for jun in junctions :do
+        ;;   (destructuring-bind (l-idx r-idx r-len l-len jp)
+        ;;       jun
+        ;;     (format t "~%~A -> ~A;"  ;; | ~A >--< ~A
+        ;;             r-idx l-idx ;; l-len r-len
+        ;;             )
+        ;;     (setf (aref packflag (pnt-y jp) (- (pnt-x jp) 1)) 63)
+        ;;     (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 0) 255)
+        ;;     (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 1) 255)
+        ;;     (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 2) 0)
+        ;;     ;;
+        ;;     (setf (aref packflag (pnt-y jp) (pnt-x jp)) 63)
+        ;;     (setf (aref packline (pnt-y jp) (pnt-x jp) 0) 0)
+        ;;     (setf (aref packline (pnt-y jp) (pnt-x jp) 1) 255)
+        ;;     (setf (aref packline (pnt-y jp) (pnt-x jp) 2) 255)
+        ;;     ;;
+        ;;     (setf (aref packflag (pnt-y jp) (+ (pnt-x jp) 1)) 63)
+        ;;     (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 0) 255)
+        ;;     (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 1) 0)
+        ;;     (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 2) 255)
+        ;;     ))
+        ;; ;; (loop for edge-idx from 0 to for cur-edge in edges do
+        ;; (let* ((edge-idx 69) ;; dbg instead of loop
+        ;;        (cur-edge (nth edge-idx edges)))
+        ;;   (let* ((filename (format nil "~A" edge-idx))
+        ;;          (filepath (format nil "~A/~A.png" dir filename))
+        ;;          ;; (new (re-conv-8x8 packflag packline height width channels bit-depth img))
+        ;;          ;; (new (edge-visualization (list cur-edge) new height width))
+        ;;          ;; (new (with-open-file (output
+        ;;          ;;                       filepath
+        ;;          ;;                       :element-type '(unsigned-byte 8)
+        ;;          ;;                       :direction :output :if-exists :supersede)
+        ;;          ;;        (png:encode new output)))
+        ;;          (candidate (get-xy-pair (car cur-edge)))
+        ;;          (cur-fill ;; в процесе заливки сам расставляет признаки
+        ;;            (fill-8x8 candidate pf-height pf-width packflag #b10000000 t))
+        ;;          ;; (new-packflag
+        ;;          ;;   (make-array `(,pf-height ,pf-width)
+        ;;          ;;               :element-type 'fixnum :initial-element 0))
+        ;;          ;; (new-packline
+        ;;          ;;   (make-array `(,pf-height ,pf-width ,channels)
+        ;;          ;;               :element-type '(unsigned-byte 8)
+        ;;          ;;               :initial-element 0))
+        ;;          ;; (ys (mapcar #'edge-pnt-y cur-edge))
+        ;;          ;; (xs (mapcar #'edge-pnt-y cur-edge))
+        ;;          ;; (y-min (reduce #'min ys))
+        ;;          ;; (x-min (reduce #'min xs))
+        ;;          ;; (y-max (reduce #'max ys))
+        ;;          ;; (x-max (reduce #'max xs))
+        ;;          ;; (y-size (+ 1 (- y-max y-min)))
+        ;;          ;; (x-size (+ 1 (- x-max x-min)))
+        ;;          ;; (new-img  (png:make-image (ash y-size 3) (ash x-size 3)
+        ;;          ;;                           channels bit-depth))
+        ;;          )
+        ;;     ;; new-packflag, new-packline
+        ;;     ;; (do* ((yy 0  (+ 1 yy)))
+        ;;     ;;      ((>= yy y-size))
+        ;;     ;;   (declare (type fixnum yy))
+        ;;     ;;   (do* ((xx 0  (+ 1 xx)))
+        ;;     ;;        ((>= xx x-size))
+        ;;     ;;     (declare (type fixnum xx))
+        ;;     ;;     (setf (aref new-packflag yy xx)
+        ;;     ;;           (aref packflag (+ yy y-min) (+ xx x-min)))
+        ;;     ;;     (dotimes (zz channels)
+        ;;     ;;       (setf (aref new-packline yy xx zz)
+        ;;     ;;             (aref packline (+ yy y-min) (+ xx x-min) zz)))))
+        ;;     ;; new-img
+        ;;     ;; (let ((y-start (ash y-min 3))
+        ;;     ;;       (x-start (ash x-min 3)))
+        ;;     ;;   (do* ((yy 0  (+ 1 yy)))
+        ;;     ;;        ((>= yy (ash y-size 3)))
+        ;;     ;;     (declare (type fixnum yy))
+        ;;     ;;     (do* ((xx 0 (+ 1 xx)))
+        ;;     ;;          ((>= xx (ash x-size 3)))
+        ;;     ;;       (declare (type fixnum xx))
+        ;;     ;;       (dotimes (zz channels)
+        ;;     ;;         (setf (aref new-img yy xx zz)
+        ;;     ;;               (aref img
+        ;;     ;;                     (+ yy y-start)
+        ;;     ;;                     (+ xx x-start)
+        ;;     ;;                     zz))))))
+        ;;     ;; (save-packflag filepath
+        ;;     ;;                new-packflag new-packline (ash y-size 3) (ash x-size 3)
+        ;;     ;;                channels bit-depth new-img)
+        ;;     ))
+        ;; (save-packflag (format nil "~A/ALL-~A.png" dir (symbol-name (gensym)))
+        ;;                packflag packline height width
+        ;;                channels bit-depth img)
+        ;; ))))
 
 (time
  (progn
    (init-defaults)
-   (launcher "antalya.png")))
+   (print
+    (launcher "antalya.png"))))
+
 
 
 ;; (defun core-main ()
