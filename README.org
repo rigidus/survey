@@ -303,6 +303,8 @@ A recursive lock differs from an ordinary lock in that a thread that already hol
 
 #+NAME: dbg
 #+BEGIN_SRC lisp
+  (ql:quickload "bordeaux-threads")
+
   (defparameter *OUTLOCK*
     (bt:make-recursive-lock "output-lock"))
 
@@ -1118,7 +1120,7 @@ How to make screenshot:
   (defun re-conv-8x8 (packflag packline height width channels bit-depth &optional old)
     (declare (optimize (speed 3))
              (optimize (safety 0)))
-    (let* ((new        (png:make-image height width channels bit-depth)))
+    (let* ((new (png:make-image height width channels bit-depth)))
       ;; Восстанавливаем информацию из packflag и packline
       (do* ((yy1      0  (+ 1 yy1))
             (yy-8-p   0  (logand yy1 7))
@@ -1142,12 +1144,15 @@ How to make screenshot:
                 ;; 8x8-квадрат залит полностью - выведем его цвет с
                 ;; дитерингом осветляя каждый второй пиксель, чтобы
                 ;; показать что это фон и получить масштабную сетку
+                ;; (! дитеринг отключен для скорости !)
                 (rgb-times
-                  (if (or (not (= 0 (logand yy1 #b010)))
-                          (not (= 0 (logand xx1 #b010))))
-                      (aref packline yy3 xx3 zz)
-                      ;; else
-                      (logand 255 (+ 20 (aref packline yy3 xx3 zz)))))
+                  (aref packline yy3 xx3 zz) ;; вместо дитеринга
+                  ;; (if (or (not (= 0 (logand yy1 #b010)))
+                  ;;         (not (= 0 (logand xx1 #b010))))
+                  ;;     (aref packline yy3 xx3 zz)
+                  ;;     ;; else
+                  ;;     (logand 255 (+ 20 (aref packline yy3 xx3 zz))))
+                  )
                 ;; else: 8x8-квадрат не залит полностью
                 (if (and (< yy1 y-chg)
                          (< xx3 x-chg))
@@ -1161,12 +1166,15 @@ How to make screenshot:
                     ;; их младшие биты, чтобы цвет остальных пикселей
                     ;; отличался от того что мы взяли из packline для
                     ;; залитого участка квадрата
+                    ;; (! отключено для скорости !)
                     (when old
                       (rgb-times
-                        (logand 255
-                                ;; we need only 1 bit for channel
-                                (logior #b00011111
-                                        (aref old yy1 xx1 zz)))))))
+                        (aref old yy1 xx1 zz)
+                        ;; (logand 255
+                        ;;         ;; we need only 1 bit for channel
+                        ;;         (logior #b00011111
+                        ;;                 (aref old yy1 xx1 zz)))
+                        ))))
             ;; Особые случаи: Если у нас есть флаги bb7 и bb6
             (when (not (= 0 bb7))
               (rgb-times
@@ -1686,7 +1694,7 @@ Implemenation
                       ;; то что между ними есть квадрат цвета фона. Мы можем запомнить
                       ;; их индексы, и координату разделяющей точки, чтобы выполнить
                       ;; обьединение за пределами цикла
-                      (push (list l-idx r-idx (length l-edge) (length r-edge)
+                      (push (list l-idx r-idx
                                   (make-pnt :y (edge-pnt-y r-edge-pnt)
                                             :x (+ (edge-pnt-x l-edge-pnt) 1)))
                             junctions)
@@ -1808,11 +1816,14 @@ Implemenation
 
   ;; launcher
 
+  (ql:quickload "cl-tesseract")
+  (ql:quickload :cl-ppcre)
+
   (defun launcher (filename)
     (let* ((img (with-open-file (input filename :element-type '(unsigned-byte 8))
                   (png:decode input)))
            (base-dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym)))))
-           (edge-dir (ensure-directories-exist (format nil "~A/edges/" base-dir)))
+           ;; (edge-dir (ensure-directories-exist (format nil "~A/edges/" base-dir)))
            (fill-dir (ensure-directories-exist (format nil "~A/fills/" base-dir)))
            (chop-dir (ensure-directories-exist (format nil "~A/chops/" base-dir))))
       (multiple-value-bind (packflag packline height width channels bit-depth)
@@ -1848,21 +1859,12 @@ Implemenation
                (conn-list (connlists adj-list)))
           ;; у нас есть junctions - теперь мы можем расставить точки связи
           (loop for jun in junctions :do
-            (destructuring-bind (l-idx r-idx r-len l-len jp) jun
-              (setf (aref packflag (pnt-y jp) (- (pnt-x jp) 1)) 63)
-              (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 0) 255)
-              (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 1) 255)
-              (setf (aref packline (pnt-y jp) (- (pnt-x jp) 1) 2) 0)
-              ;;
+            (let ((jp (car (last jun))))
               (setf (aref packflag (pnt-y jp) (pnt-x jp)) 63)
-              (setf (aref packline (pnt-y jp) (pnt-x jp) 0) 0)
-              (setf (aref packline (pnt-y jp) (pnt-x jp) 1) 255)
-              (setf (aref packline (pnt-y jp) (pnt-x jp) 2) 255)
-              ;;
-              (setf (aref packflag (pnt-y jp) (+ (pnt-x jp) 1)) 63)
-              (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 0) 255)
-              (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 1) 0)
-              (setf (aref packline (pnt-y jp) (+ (pnt-x jp) 1) 2) 255)))
+              ;; (setf (aref packline (pnt-y jp) (pnt-x jp) 0) 0)
+              ;; (setf (aref packline (pnt-y jp) (pnt-x jp) 1) 255)
+              ;; (setf (aref packline (pnt-y jp) (pnt-x jp) 2) 255)
+              ))
           ;; У нас есть компоненты связности - выполним слияние блоков
           (loop for conn-elt in conn-list do
             ;; Для каждого edge компонента связности кроме первого
@@ -1880,17 +1882,18 @@ Implemenation
                   ;;        (cur-edge (nth edge-idx edges)))
                   (when cur-edge
                     (let* ((filename (format nil "~A" edge-idx))
-                           ;; Восстанавливаем изображение из packflag и packline
-                           (new (re-conv-8x8 packflag packline height width channels bit-depth img))
-                           ;; Добавляем визуализацию краев
-                           (new (edge-visualization (list cur-edge) new height width))
-                           ;; Сохраняем в файл визуализацию краев
-                           (stb (let ((filepath (format nil "~A/~A.png" edge-dir filename)))
-                                  (with-open-file (output
-                                                   filepath
-                                                   :element-type '(unsigned-byte 8)
-                                                   :direction :output :if-exists :supersede)
-                                    (png:encode new output))))
+                           ;; ;; Восстанавливаем изображение из packflag и packline
+                           ;; (new (re-conv-8x8 packflag packline height width channels
+                           ;;                   bit-depth img))
+                           ;; ;; Добавляем визуализацию краев
+                           ;; (new (edge-visualization (list cur-edge) new height width))
+                           ;; ;; Сохраняем в файл визуализацию краев
+                           ;; (stb (let ((filepath (format nil "~A/~A.png" edge-dir filename)))
+                           ;;        (with-open-file (output
+                           ;;                         filepath
+                           ;;                         :element-type '(unsigned-byte 8)
+                           ;;                         :direction :output :if-exists :supersede)
+                           ;;          (png:encode new output))))
                            ;; Локальная копия packflag и packline
                            (loc-packflag (alexandria:copy-array packflag))
                            (loc-packline (alexandria:copy-array packline))
@@ -1909,61 +1912,77 @@ Implemenation
                            (x-size (+ 1 (- x-maxi x-mini)))
                            ;; Создаем пустые chop-packflag и chop-packline
                            ;; чтобы потом вырезать из оригинальных контент
-                           ;; и вставить в chop (TODO: размер должен быть меньше)
-                           (chop-packflag (make-array `(,pf-height ,pf-width)
+                           ;; и вставить в chop
+                           (chop-packflag (make-array `(,y-size ,x-size)
                                                       :element-type 'fixnum :initial-element 0))
-                           (chop-packline (make-array `(,pf-height ,pf-width ,channels)
+                           (chop-packline (make-array `(,y-size ,x-size ,channels)
                                                       :element-type '(unsigned-byte 8)
                                                       :initial-element 0))
                            ;; Создаем chop-img
                            (chop-img (png:make-image (ash y-size 3) (ash x-size 3)
                                                      channels bit-depth)))
                       (declare (ignore cur-fill))
-                      (declare (ignore stb))
-                      ;; Вырезаем блок из packflag и packline и вставляем в chops
-                      (do* ((yy 0  (+ 1 yy)))
-                           ((>= yy y-size))
-                        (declare (type fixnum yy))
-                        (do* ((xx 0  (+ 1 xx)))
-                             ((>= xx x-size))
-                          (declare (type fixnum xx))
-                          (setf (aref chop-packflag yy xx)
-                                (aref packflag (+ yy y-mini) (+ xx x-mini)))
-                          (dotimes (zz channels)
-                            (setf (aref chop-packline yy xx zz)
-                                  (aref packline (+ yy y-mini) (+ xx x-mini) zz)))))
-                      ;; делаем вырезку в chop-img
-                      (let ((y-start (ash y-mini 3))
-                            (x-start (ash x-mini 3)))
+                      (when (and
+                             ;; Если edge не занимает больше 9/10 экрана по какой-то из сторон
+                             (< x-size (* 9 (floor (ash *default-width* -3) 10)))
+                             (< y-size (* 9 (floor (ash *default-height* -3) 10)))
+                             ;; Или если x-size < 4
+                             (> x-size 4))
+                        ;; Вырезаем блок из packflag и packline и вставляем в chops
+                        ;; При этом не переносим точки если packflag == 0
                         (do* ((yy 0  (+ 1 yy)))
-                             ((>= yy (ash y-size 3)))
+                             ((>= yy y-size))
                           (declare (type fixnum yy))
-                          (do* ((xx 0 (+ 1 xx)))
-                               ((>= xx (ash x-size 3)))
+                          (do* ((xx 0  (+ 1 xx)))
+                               ((>= xx x-size))
                             (declare (type fixnum xx))
-                            (dotimes (zz channels)
-                              (setf (aref chop-img yy xx zz)
-                                    (aref img
-                                          (+ yy y-start)
-                                          (+ xx x-start)
-                                          zz))))))
-                      ;; сохраняем chop-img
-                      (let ((filepath (format nil "~A/~A.png" chop-dir filename)))
-                        (save-packflag filepath
-                                       chop-packflag chop-packline (ash y-size 3) (ash x-size 3)
-                                       channels bit-depth chop-img))
-                      ;; сохраняем img c локальной копией pack-ов
-                      (let ((filepath (format nil "~A/~A.png" fill-dir filename)))
-                        (save-packflag filepath
-                                       loc-packflag loc-packline height width
-                                       channels bit-depth img))
-                      ;; сохраняем img c оригиналом pack-ов
-                      ;; (let (filepath (format nil "~A/~A.png" orig-dir filename))
-                      ;;   (save-packflag filepath
-                      ;;                  packflag packline height width
-                      ;;                  channels bit-depth img))
-                      )))
-          ;; (save-packflag (format nil "~A/ALL-~A.png" dir (symbol-name (gensym)))
+                            (let ((packflag-pnt (aref packflag (+ yy y-mini) (+ xx x-mini))))
+                              (unless (= 0 packflag-pnt)
+                                (setf (aref chop-packflag yy xx)
+                                      packflag-pnt)
+                                (dotimes (zz channels)
+                                  (setf (aref chop-packline yy xx zz)
+                                        (aref packline (+ yy y-mini) (+ xx x-mini) zz)))))))
+                        ;; делаем вырезку в chop-img, который нужен нам для re-conv
+                        (let ((y-start (ash y-mini 3))
+                              (x-start (ash x-mini 3)))
+                          (do* ((yy 0  (+ 1 yy)))
+                               ((>= yy (ash y-size 3)))
+                            (declare (type fixnum yy))
+                            (do* ((xx 0 (+ 1 xx)))
+                                 ((>= xx (ash x-size 3)))
+                              (declare (type fixnum xx))
+                              (dotimes (zz channels)
+                                (let ((packflag-pnt (aref packflag
+                                                          (+ (ash yy -3) y-mini)
+                                                          (+ (ash xx -3) x-mini))))
+                                  (unless (= 0 packflag-pnt)
+                                    (setf (aref chop-img yy xx zz)
+                                          (aref img
+                                                (+ yy y-start)
+                                                (+ xx x-start)
+                                                zz))))))))
+                        ;; сохраняем chop-img
+                        (let ((filepath (format nil "~A/~A.png" chop-dir filename)))
+                          (save-packflag filepath
+                                         chop-packflag chop-packline (ash y-size 3) (ash x-size 3)
+                                         channels bit-depth chop-img)
+                          (let ((tesser (cl-tesseract:image-to-text filepath :lang "rus+eng")))
+                            (format t "~%~A:(~A:~A) ~A" edge-idx y-size x-size
+                                    (bprint
+                                     (cl-ppcre:regex-replace-all "^\\s+|\\s+$" tesser "")))))
+                        ;; сохраняем img c локальной копией pack-ов
+                        (let ((filepath (format nil "~A/~A.png" fill-dir filename)))
+                          (save-packflag filepath
+                                         loc-packflag loc-packline height width
+                                         channels bit-depth img))
+                        ;; сохраняем img c оригиналом pack-ов
+                        ;; (let (filepath (format nil "~A/~A.png" orig-dir filename))
+                        ;;   (save-packflag filepath
+                        ;;                  packflag packline height width
+                        ;;                  channels bit-depth img))
+                        ))))
+          ;; (save-packflag (format nil "~A/ALL-~A.png" base-dir (symbol-name (gensym)))
           ;;                packflag packline height width
           ;;                channels bit-depth img)
           ))))
@@ -1984,10 +2003,8 @@ Implemenation
 
 
   ;; TODO:
-  ;; отправить в тессеракт
-  ;; ocr
-  ;; (print (cl-tesseract:image-to-text filepath :lang "rus+eng"))
-  ;; получить распознанные блоки и их координаты
+  ;; - получить распознанные блоки и их координаты
+  ;; - отправлять блоки в LLM
 #+END_SRC
 
 * Fill
@@ -2657,6 +2674,8 @@ http://algolist.ru/graphics/fill.php
 * Dbg assembly
 
 #+BEGIN_SRC lisp :tangle ./run.lisp :noweb yes :exports code
+  <<dbg>>
+
   <<x_snapshot>>
 
   <<conv_8x8>>
