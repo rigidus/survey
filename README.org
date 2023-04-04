@@ -1654,54 +1654,96 @@ Implemenation
           (if (= 1 (length val))
               (incf single)
               (incf multi)))
-        (= 0 (floor multi single)))))
+        (unless (= 0 single)
+          (= 0 (floor multi single))))))
 
 
-  (defun find-junctions (edges)
+  (defun show-square (yy xx rr gg bb packflag packline)
+    (setf (aref packflag yy xx) 63)
+    (setf (aref packline yy xx 0) rr)
+    (setf (aref packline yy xx 1) gg)
+    (setf (aref packline yy xx 2) bb))
+
+
+  (defun match-near-edges (r-edge-pnt l-edge-pnt offset-y offset-x packflag packline)
+    ;; match
+    (when (and
+           (= (+ offset-y (edge-pnt-y r-edge-pnt)) (edge-pnt-y l-edge-pnt))
+           (= (+ offset-x (edge-pnt-x r-edge-pnt)) (edge-pnt-x l-edge-pnt)))
+      (let ((rs))
+        (loop for y-rep from 0 to offset-y do
+          (loop for x-rep from 0 to offset-x do
+            ;; retval
+            (push (make-pnt :y (+ y-rep (edge-pnt-y r-edge-pnt))
+                            :x (+ x-rep (edge-pnt-x r-edge-pnt)))
+                  rs)
+            ;; light-blue
+            ;; (show-square (+ y-rep (edge-pnt-y r-edge-pnt))
+            ;;              (+ x-rep (edge-pnt-x r-edge-pnt))
+            ;;              0 255 255 packflag packline)
+                ))
+        ;; ;; magenta right
+        ;; (show-square (edge-pnt-y r-edge-pnt) (edge-pnt-x r-edge-pnt) 255 0 255 packflag packline)
+        ;; ;; yelloy left
+        ;; (show-square (edge-pnt-y l-edge-pnt) (edge-pnt-x l-edge-pnt) 255 255 0 packflag packline)
+        ;; ret true
+        (reverse rs))))
+
+  (ql:quickload "anaphora")
+  (use-package :anaphora)
+
+  (defun find-junctions (edges packflag packline)
     ;; Функция получает на вход список периметров, найденный в изображении
+    ;; (каждый периметр - это список структур EDGE-PNT)
     ;; и возвращает список пар смежности, где первые два элемента - это
-    ;; порядковые номера смежных периметров, а последний элемент - это
-    ;; структура PNT смежной точки
-    (let* ((l-edges ;; Для каждой каймы здесь оставляем только левый край
+    ;; порядковые номера смежных периметров в массиве edges,
+    ;; а последний элемент - это список структур PNT смежных точек
+    (let* ((l-edges ;; Для каждоого периметра здесь оставляем только левый край
              (mapcar #'(lambda (edge) ;; - это точки с направленем вверх
                          (remove-if-not #'(lambda (edge-pnt)
                                             (equal :tu (edge-pnt-d edge-pnt)))
                                         edge))
                      edges))
-           (r-edges ;; Для каждой каймы здесь оставляем только правый край
+           (r-edges ;; Для каждой периметра здесь оставляем только правый край
              (mapcar #'(lambda (edge) ;;  - это точки с направлением вниз
                          (remove-if-not #'(lambda (edge-pnt)
                                             (equal :td (edge-pnt-d edge-pnt)))
                                         edge))
                      edges))
            (junctions))
-      ;; Для каждого из левых краев получаем край справа (от левого блока)
-      (loop for r-edge in l-edges for r-idx from 0 do
-        ;; Для каждого из правых краев получаем край слева (от правого блока)
-        (loop for l-edge in r-edges for l-idx from 0 do
-          ;; Если удалось сопоставить точки которые лежат на одной горизонтали
-          (when
-              (block edge-match
-                ;; (а для этого мы сопоставляем поточечно, и если находим
-                ;; хотя бы одну пару соответствующих точек справа и слева
-                ;; между которыми лежит одна точка фона,
-                ;; то считаем что края совпали и дальше не проверяем
-                (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
-                  (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
-                    (when (and (= (edge-pnt-y r-edge-pnt) (edge-pnt-y l-edge-pnt))
-                               (= (edge-pnt-x r-edge-pnt) (+ (edge-pnt-x l-edge-pnt) 2)))
-                      ;; Итак мы обнаружили две каймы, которым мешает объединится только
-                      ;; то что между ними есть квадрат цвета фона. Мы можем запомнить
-                      ;; их индексы, и координату разделяющей точки, чтобы выполнить
-                      ;; обьединение за пределами цикла
-                      (push (list l-idx r-idx
-                                  (make-pnt :y (edge-pnt-y r-edge-pnt)
-                                            :x (+ (edge-pnt-x l-edge-pnt) 1)))
-                            junctions)
-                      (return-from edge-match t))))
-                ;; Здесь мы оказываемся, если для этих edges ничего не нашли
-                ;; Тогда ищем дальше, для следующих точек в цикле
-                nil))))
+      ;; Для каждого из ПРАВЫХ краев получаем этот край
+      ;; (потому что будем искать точки близкого ему ЛЕВОГО края)
+      (loop for r-edge in r-edges for r-idx from 0 do
+        ;; Для каждого из ЛЕВЫХ краев получаем этот край
+        (loop for l-edge in l-edges for l-idx from 0 do
+          ;; Если мы найдем сопоставление, то среди точек пары
+          ;; правый_край:левый_край больше искать нет смысла
+          ;; поэтому будем выходить из этого блока
+          (unless (= r-idx l-idx) ;; Незачем сопоставлять периметр с самим собой
+            (block edge-match
+              ;; сопоставляем поточечно, и если находим
+              ;; хотя бы одну пару соответствующих точек справа и слева
+              ;; то считаем что края совпали и дальше не проверяем
+              (loop for r-edge-pnt :in r-edge for r-idx-pnt from 0 do
+                (loop for l-edge-pnt :in l-edge for l-idx-pnt from 0 do
+                  ;; ;; magenta right
+                  ;; (show-square (edge-pnt-y r-edge-pnt) (edge-pnt-x r-edge-pnt) 255 0 255 packflag packline)
+                  ;; ;; yelloy left
+                  ;; (show-square (edge-pnt-y l-edge-pnt) (edge-pnt-x l-edge-pnt) 255 255 0 packflag packline)
+                  ;; match
+                  (awhen (or (match-near-edges r-edge-pnt l-edge-pnt 0 2 packflag packline)
+                             (match-near-edges r-edge-pnt l-edge-pnt 0 3 packflag packline)
+                             ;; (match-near-edges r-edge-pnt l-edge-pnt 1 2 packflag packline)
+                             ;; (match-near-edges r-edge-pnt l-edge-pnt 1 3 packflag packline)
+                             )
+                    (push (list r-idx l-idx it) junctions)
+                    ;; ret block
+                    (return-from edge-match t))))
+              ;; Здесь мы оказываемся, если для этих edges ничего не нашли
+              ;; Тогда ищем дальше, для следующих точек в цикле
+              ))))
+      ;; (loop for junk in junctions do
+      ;;   (print junk))
       junctions))
 
 
@@ -1825,17 +1867,20 @@ Implemenation
            (base-dir (ensure-directories-exist (format nil "./~A/" (symbol-name (gensym)))))
            ;; (edge-dir (ensure-directories-exist (format nil "~A/edges/" base-dir)))
            (fill-dir (ensure-directories-exist (format nil "~A/fills/" base-dir)))
-           (chop-dir (ensure-directories-exist (format nil "~A/chops/" base-dir))))
+           (chop-dir (ensure-directories-exist (format nil "~A/chops/" base-dir)))
+           (tess-list))
       (multiple-value-bind (packflag packline height width channels bit-depth)
           (conv-8x8 img)
         (let* ((pf-height (ash height -3))
                (pf-width  (ash width  -3))
                (edges ;; Находим все границы фигур и удаляем найденные рамки из них
-                 ;; рамки - это фигуры, которые состоят почти только из каймы
+                 ;; рамки - это фигуры, которые состоят почти только из каймы.
+                 ;; Это список списков структур EDGE-PNT
                  (remove-if-not #'zero-frame-factor-p
                                 (find-edges packflag height width)))
                ;; находим точки соединения смежных фигур
-               (junctions (find-junctions edges))
+               ;; эта функция изменяет packflag!
+               (junctions (find-junctions edges packflag packline))
                ;; и строим по ним пары индексов смежных периметров
                (adj-pairs (mapcar #'(lambda (jnk)
                                       (cons (car jnk) (cadr jnk)))
@@ -1859,12 +1904,8 @@ Implemenation
                (conn-list (connlists adj-list)))
           ;; у нас есть junctions - теперь мы можем расставить точки связи
           (loop for jun in junctions :do
-            (let ((jp (car (last jun))))
-              (setf (aref packflag (pnt-y jp) (pnt-x jp)) 63)
-              ;; (setf (aref packline (pnt-y jp) (pnt-x jp) 0) 0)
-              ;; (setf (aref packline (pnt-y jp) (pnt-x jp) 1) 255)
-              ;; (setf (aref packline (pnt-y jp) (pnt-x jp) 2) 255)
-              ))
+            (loop for jp in (car (last jun)) :do
+              (show-square (pnt-y jp) (pnt-x jp) 0 255 255 packflag packline)))
           ;; У нас есть компоненты связности - выполним слияние блоков
           (loop for conn-elt in conn-list do
             ;; Для каждого edge компонента связности кроме первого
@@ -1923,9 +1964,10 @@ Implemenation
                                                      channels bit-depth)))
                       (declare (ignore cur-fill))
                       (when (and
-                             ;; Если edge не занимает больше 9/10 экрана по какой-то из сторон
-                             (< x-size (* 9 (floor (ash *default-width* -3) 10)))
-                             (< y-size (* 9 (floor (ash *default-height* -3) 10)))
+                             ;; Если edge не занимает больше 9/10 изображения
+                             ;; по какой-то из сторон
+                             ;; (< x-size (* 9 (floor (ash width -3) 10)))
+                             ;; (< y-size (* 9 (floor (ash height -3) 10)))
                              ;; Или если x-size < 4
                              (> x-size 4))
                         ;; Вырезаем блок из packflag и packline и вставляем в chops
@@ -1967,10 +2009,17 @@ Implemenation
                           (save-packflag filepath
                                          chop-packflag chop-packline (ash y-size 3) (ash x-size 3)
                                          channels bit-depth chop-img)
-                          (let ((tesser (cl-tesseract:image-to-text filepath :lang "rus+eng")))
-                            (format t "~%~A:(~A:~A) ~A" edge-idx y-size x-size
-                                    (bprint
-                                     (cl-ppcre:regex-replace-all "^\\s+|\\s+$" tesser "")))))
+                          (let* ((tes-ru (cl-tesseract:image-to-text filepath :lang "rus+eng"))
+                                 (tes-ru (cl-ppcre:regex-replace-all "^\\s+|\\s+$" tes-ru ""))
+                                 ;; (tes-en (cl-tesseract:image-to-text filepath :lang "eng"))
+                                 ;; (tes-en (cl-ppcre:regex-replace-all "^\\s+|\\s+$" tes-en ""))
+                                 )
+                            (when (< 3 (length tes-ru))
+                              (push (list :edge-idx edge-idx :y y-mini :x x-mini
+                                          :tes-ru (bprint tes-ru) ;; :tes-en (bprint tes-en)
+                                          )
+                                    tess-list)
+                              (format t "~%~A" tes-ru))))
                         ;; сохраняем img c локальной копией pack-ов
                         (let ((filepath (format nil "~A/~A.png" fill-dir filename)))
                           (save-packflag filepath
@@ -1985,13 +2034,28 @@ Implemenation
           ;; (save-packflag (format nil "~A/ALL-~A.png" base-dir (symbol-name (gensym)))
           ;;                packflag packline height width
           ;;                channels bit-depth img)
-          ))))
+          ))
+      ;; (loop for item in (sort tess-list #'(lambda (a b)
+      ;;                                       (< (getf a :y) (getf b :y))))
+      ;;       do
+      ;;   (format t "~%~A:(~A:~A) ~A"
+      ;;           (getf item :edge-idx)
+      ;;           (getf item :y)
+      ;;           (getf item :x)
+      ;;           (getf item :tes-ru)
+      ;;           ;; (getf item :tess-en)
+      ;;           ))
+      )
+    nil)
 
   (time
    (progn
      (init-defaults)
-     (print
-      (launcher "antalya.png"))))
+     (launcher "antalya.png")))
+
+  (print
+   (cl-tesseract:image-to-text "demo/artem.png" :lang "rus+eng")
+   nil)
 
   ;; (defun core-main ()
   ;;   (time
