@@ -301,10 +301,12 @@ When you want to display something on the screen, for example an error message i
 
 A recursive lock differs from an ordinary lock in that a thread that already holds the recursive lock can acquire it again without blocking. The thread must then release the lock twice before it becomes available for another thread.
 
+#+BEGIN_SRC lisp :noweb-ref loads
+  (ql:quickload "bordeaux-threads")
+#+END_SRC
+
 #+NAME: dbg
 #+BEGIN_SRC lisp
-  (ql:quickload "bordeaux-threads")
-
   (defparameter *OUTLOCK*
     (bt:make-recursive-lock "output-lock"))
 
@@ -887,11 +889,13 @@ Now we need to form tasks, which we will pass in the chain. Each task will captu
 
 How to make screenshot:
 
-#+NAME: x_snapshot
-#+BEGIN_SRC lisp :padline no
+#+BEGIN_SRC lisp :noweb-ref loads
   (ql:quickload "clx")
   (ql:quickload "zpng")
+#+END_SRC
 
+#+NAME: x_snapshot
+#+BEGIN_SRC lisp :padline no
   (defmacro with-display (host (display screen root-window) &body body)
     `(let* ((,display (xlib:open-display ,host))
             (,screen (first (xlib:display-roots ,display)))
@@ -1010,9 +1014,13 @@ How to make screenshot:
 
 Чтобы алгоритм был cache-friendly мы проходим массив пикселей строка за строкой обновляя массивы ~packflag~ и ~packline~. Каждый элемент массива ~packflag~ содержит 0 если цвет не менялся. Если же цвет менялся - то этот элемент содержит число от 1 до 64, которое представляет собой относительный порядковый номер пикселя в квадрате 8*8, где было обнаружено изменение цвета. Элементы массива ~packline~, содержащат цвет всего квадрата 8*8, если цвет не менялся или цвет тех первых точек квадрата до изменения цвета, если считать от левого верхнего угла квадрата.
 
+#+BEGIN_SRC lisp :noweb-ref loads
+  (ql:quickload "png")
+#+END_SRC
+
 #+NAME: conv_8x8
 #+BEGIN_SRC lisp
-  (ql:quickload "png")
+
 
   (defmacro pin (yy xx aa bb cc)
     `(progn
@@ -1495,6 +1503,13 @@ Implemenation
 
 Найдя потенциальные точки мы можем в цикле использовать их для поиска фигур функцией ~edge-8x8~. При этом мы каждый раз будем получать набор точек по краю фигуры. Если точки из этого набора присутствуют в списке потенциальных точек, то их нужно оттуда удалить, так как точки ограничивающие одну фигуру не могут быть частью другой.
 
+#+BEGIN_SRC lisp :noweb-ref loads
+  (ql:quickload "anaphora")
+  (use-package :anaphora)
+  (ql:quickload "cl-tesseract")
+  (ql:quickload :cl-ppcre)
+#+END_SRC
+
 #+NAME: launcher
 #+BEGIN_SRC lisp
   (defmacro dbgout-array (name)
@@ -1689,9 +1704,6 @@ Implemenation
         ;; ret true
         (reverse rs))))
 
-  (ql:quickload "anaphora")
-  (use-package :anaphora)
-
   (defun find-junctions (edges packflag packline)
     ;; Функция получает на вход список периметров, найденный в изображении
     ;; (каждый периметр - это список структур EDGE-PNT)
@@ -1857,9 +1869,6 @@ Implemenation
 
 
   ;; launcher
-
-  (ql:quickload "cl-tesseract")
-  (ql:quickload :cl-ppcre)
 
   (defun launcher (filename)
     (let* ((img (with-open-file (input filename :element-type '(unsigned-byte 8))
@@ -2048,14 +2057,14 @@ Implemenation
       )
     nil)
 
-  (time
-   (progn
-     (init-defaults)
-     (launcher "antalya.png")))
+  ;; (time
+  ;;  (progn
+  ;;    (init-defaults)
+  ;;    (launcher "antalya.png")))
 
-  (print
-   (cl-tesseract:image-to-text "demo/artem.png" :lang "rus+eng")
-   nil)
+  ;; (print
+  ;;  (cl-tesseract:image-to-text "demo/artem.png" :lang "rus+eng")
+  ;;  nil)
 
   ;; (defun core-main ()
   ;;   (time
@@ -2086,11 +2095,12 @@ Implemenation
 3. Анализируется строка ниже закрашиваемой в пределах от Х-left до Х-right и в ней находятся крайние правые пиксели всех незакрашенных фрагментов. Их координаты заносятся в стек.
 4. То же самое проделывается для строки выше закрашиваемой.
 
+#+BEGIN_SRC lisp :noweb-ref loads
+  (ql:quickload "alexandria")
+#+END_SRC
+
 #+NAME: fill_8x8
 #+BEGIN_SRC lisp
-  (ql:quickload "alexandria")
-  ;; (ql:quickload "cl-tesseract")
-
   ;; (declaim (OPTIMIZE (SPEED 3) #|(SAFETY 0)|# ))
 
   (defun pnt-or-nil-p (thing)
@@ -2411,10 +2421,10 @@ Implemenation
   (defparameter *down-key* 116)
 
 
-  (x-key-down 37)
-  (x-key-up 37)
+  ;; (x-key-down 37)
+  ;; (x-key-up 37)
 
-  (x-key-up *down-key*)
+  ;; (x-key-up *down-key*)
 
 
 #+END_SRC
@@ -2801,6 +2811,8 @@ http://algolist.ru/graphics/fill.php
 * Dbg assembly
 
 #+BEGIN_SRC lisp :tangle ./run.lisp :noweb yes :exports code
+  <<loads>>
+
   <<dbg>>
 
   <<x_snapshot>>
@@ -2814,6 +2826,8 @@ http://algolist.ru/graphics/fill.php
   <<fill_8x8>>
 
   <<launcher>>
+
+  <<remote_gui>>
 #+END_SRC
 
 * Supercompile
@@ -5304,6 +5318,11 @@ lisp
 
   (defun x-hscroll (clicks &key x y)
     (with-scroll 7 6 clicks x y))
+
+  ;; test: vertiacal scroll for 5 clics in position X and Y
+  ;; (progn
+  ;;   (sleep .1)
+  ;;   (x-vscroll -5 :x 1500 :y 300))
 
   (macrolet ((def (name actions)
                `(defun-with-actions ,name (keycode)
