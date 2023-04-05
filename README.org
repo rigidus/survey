@@ -2356,6 +2356,69 @@ Implemenation
   ;;   (finish-output))
 #+END_SRC
 
+* Operations
+
+В простейшем случае мы открываем все необходимые окна заранее. Самый простой алгоритм должен последовательно сделать следующее:
+
+- Сделать скриншот
+- Найти сообщения. Для каждого из них:
+  - Выделить сообщение
+  - Скопировать в буфер
+  - Перейти в поле ввода промпта
+  - Ввести промпт с сообщением
+  - Дождаться ответа
+  - Скопировать ответ
+  - Отправить его в чат
+- Как только все сообщения обработаны - выполнить скроллинг
+- Если скроллинг закончился, переключиться на другую задачу или остановиться
+
+Расширенный алгоритм помимо этого переключается между чатами
+
+** Keyboard
+
+#+BEGIN_SRC lisp
+
+  (defmacro defun-with-actions (name params actions &body body)
+    "This macro defun a function which witch do mouse or keyboard actions,
+  body is called on each action."
+    `(defun ,name ,params
+       (mapcar
+        #'(lambda (action)
+            ,@body)
+        (mklist ,actions))))
+
+  (defun mklist (obj)
+    (if (and
+         (listp obj)
+         (not (null obj)))
+        obj (list obj)))
+
+  (defun perform-key-action (press? keycode) ; use xev to get keycode
+    (with-default-display-force (d)
+      (xlib/xtest:fake-key-event d keycode press?)))
+
+  (macrolet ((def (name actions)
+               `(defun-with-actions ,name (keycode)
+                  ,actions
+                  (funcall #'perform-key-action
+                           action keycode))))
+    (def x-key-down t)
+    (def x-key-up nil)
+    (def x-press '(t nil)))
+
+  (perform-key-action t 37)
+
+  (defparameter *down-key* 116)
+
+
+  (x-key-down 37)
+  (x-key-up 37)
+
+  (x-key-up *down-key*)
+
+
+#+END_SRC
+
 * Tesseract
 
 Я получил сообщение:
