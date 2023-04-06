@@ -1,3 +1,4 @@
+
 #+STARTUP: showall indent hidestars
 #+HTML_HEAD: <link rel='stylesheet' type='text/css' href='./css/style.css'/>
 
@@ -2830,6 +2831,47 @@ http://algolist.ru/graphics/fill.php
   <<remote_gui>>
 #+END_SRC
 
+* Automation
+
+#+BEGIN_SRC lisp
+  (defun trim (str)
+    (cl-ppcre:regex-replace-all "^\\s+|\\s+$" str ""))
+
+  (defun sys (cmd)
+    (with-output-to-string (out)
+      (sb-ext:run-program "/bin/sh" (list "-c" cmd) :input nil :output out)))
+
+  (let* ((firefox  (sys "xdotool search --name \"Mozilla Firefox\"")))
+    (sys (format nil "xdotool windowactivate --sync ~A" firefox))
+    (sys "xdotool key --clearmodifiers ctrl+t")
+    (sys "xdotool key --clearmodifiers ctrl+l")
+    (sys "xdotool type 'https://chat.openai.com/chat'")
+    (sys "xdotool key KP_Enter")
+    (sys "xdotool key --clearmodifiers ctrl+XK_semicolon")
+    )
+
+#+END_SRC
+
+Пример: сфокусировать адресную строку firefox
+
+WID=`xdotool search "Mozilla Firefox" | head -1`
+xdotool windowactivate --sync $WID
+xdotool key --clearmodifiers ctrl+l
+
+# As of version 2.20100623, you can do this simpler version of above:
+xdotool search "Mozilla Firefox" windowactivate --sync key --clearmodifiers ctrl+l
+
+Пример: изменение размера всех видимых окон терминала gnome
+
+WIDS=`xdotool search --onlyvisible --name "gnome-terminal"`
+for id in $WIDS; do
+  xdotool windowsize $id 500 500
+done
+
+* keynav
+
+https://www.semicomplete.com/projects/keynav/
+
 * Supercompile
 
 #+BEGIN_SRC lisp
@@ -5333,10 +5375,10 @@ lisp
     (def x-key-up nil)
     (def x-press '(t nil)))
 
-  ;; (block perform-key-action-test
-  ;;   (perform-key-action t 116)
-  ;;   (sleep .1)
-  ;;   (perform-key-action nil 116))
+  (block perform-key-action-test
+    (perform-key-action t 47)
+    (sleep .1)
+    (perform-key-action nil 116))
 
   ;; (defparameter *mouse-left* 1)
 
