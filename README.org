@@ -2834,22 +2834,83 @@ http://algolist.ru/graphics/fill.php
 * Automation
 
 #+BEGIN_SRC lisp
+  (ql:quickload "cl-ppcre")
+
   (defun trim (str)
     (cl-ppcre:regex-replace-all "^\\s+|\\s+$" str ""))
 
   (defun sys (cmd)
-    (with-output-to-string (out)
-      (sb-ext:run-program "/bin/sh" (list "-c" cmd) :input nil :output out)))
+    (trim (with-output-to-string (out)
+            (sb-ext:run-program "/bin/sh" (list "-c" cmd) :input nil :output out))))
 
-  (let* ((firefox  (sys "xdotool search --name \"Mozilla Firefox\"")))
-    (sys (format nil "xdotool windowactivate --sync ~A" firefox))
-    (sys "xdotool key --clearmodifiers ctrl+t")
-    (sys "xdotool key --clearmodifiers ctrl+l")
-    (sys "xdotool type 'https://chat.openai.com/chat'")
-    (sys "xdotool key KP_Enter")
-    (sys "xdotool key --clearmodifiers ctrl+XK_semicolon")
-    )
+  ;; (let* ((firefox  (sys "xdotool search --name \"Mozilla Firefox\"")))
+  ;;   (sys (format nil "xdotool windowactivate --sync ~A" firefox))
+  ;;   (sys "xdotool key --clearmodifiers ctrl+t")
+  ;;   (sys "xdotool key --clearmodifiers ctrl+l")
+  ;;   (sys "xdotool type 'https://chat.openai.com/chat'")
+  ;;   (sys "xdotool key KP_Enter")
+  ;;   (sys "xdotool key --clearmodifiers ctrl+XK_semicolon")
+  ;;   )
 
+  (defun get-firefox ()
+    (sys "xdotool search --name \"Mozilla Firefox\""))
+
+  (defun win-activate (id)
+    (sys (format nil "xdotool windowactivate --sync ~A" id)))
+
+  (defun firefox-ready-p (wid)
+    (if (equalp wid (sys "xdotool getactivewindow"))
+        nil
+        ;; t
+        nil
+        ))
+
+  (define-condition firefox-not-ready-error (error)
+    ((text :initarg :text :reader text)))
+
+  (defun ensure-firefox-ready (wid)
+    (tagbody
+     get-ready-firefox
+       (unless (firefox-ready-p wid)
+         (restart-case (error 'firefox-not-ready-error)
+           (wait-and-repeat (&optional (seconds 1) (attempt 0))
+             (format t ":: sleeping ~A seconds..~%" seconds)  (sleep seconds)
+             (format t ":: attempt ~A ..~%" attempt)  (go get-ready-firefox))
+           (repeat ()
+             (go get-ready-firefox))
+           (stop-scenario ()
+             (go failed)))
+         (return-from ensure-firefox-ready t))
+     failed
+       nil))
+
+  (defun scenario ()
+    (let ((wid (get-firefox)))
+      ;; (win-activate wid)
+      (when (ensure-firefox-ready wid)
+        (let ((chat-gpt-tab "(find-control-position 'chat-gpt-tab)"))
+          (print chat-gpt-tab)
+          ;;   (click chat-gpt-tab)
+          ;;   (unless (chat-gpt-ready)
+          ;;     (restart-case (error 'chat-gpt-not-ready)
+          ;;       (use-value (value) value)
+          ;;       (reparse-entry (fixed-text) (parse-log-entry fixed-text))))
+          ))
+      (format t ":: stop-scenario~%")))
+
+  (let ((wait-and-repeat-count 1)
+        (wait-and-repeat-max-count 5))
+    (handler-bind
+        ((firefox-not-ready-error
+           #'(lambda (c)
+               (if (< wait-and-repeat-count wait-and-repeat-max-count)
+                   (progn
+                     (incf wait-and-repeat-count)
+                     (invoke-restart 'wait-and-repeat 1 wait-and-repeat-count))
+                   ;; else
+                   (format t ":: failed after ~A attempts | NEED HELP from operator~%"
+                           wait-and-repeat-count)))))
+      (scenario)))
 #+END_SRC
 
 Пример: сфокусировать адресную строку firefox
