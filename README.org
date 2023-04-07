@@ -2843,6 +2843,217 @@ http://algolist.ru/graphics/fill.php
     (trim (with-output-to-string (out)
             (sb-ext:run-program "/bin/sh" (list "-c" cmd) :input nil :output out))))
 
+  (defun search-wnd (wnd-name)
+    (sys (format nil "xdotool search --name '~A'" wnd-name)))
+
+  (defun search-wnd-special-case-for-tlg ()
+    ;; Телеграмм изменяет имя своего окна, но в имени всегда есть число
+    ;; непрочитанных сообщений в скобках, поэтому ищем регуляркой
+    ;; для преобразования из хекса в десятичное нужно поставить gawk:
+    ;; sudo apt-get install gawk
+    (sys "wmctrl -l | awk '/\\([0-9]*\\)/ {print strtonum($1)}'"))
+
+  ;; (search-wnd-special-case-for-tlg)
+
+  (define-condition unimplemented-error (error) ())
+
+  (define-condition telegram-wnd-not-found-error (error) ())
+
+  (defun get-messenger-wid ()
+    (let ((tlg-wnd (search-wnd-special-case-for-tlg)))
+      (if (equal "" tlg-wnd)
+          (restart-case (error 'telegram-wnd-not-found-error)
+            (try-to-run-telegramm (&optional method)
+              (declare (ignore method))
+              ;; TODO: recovery strategyes:
+              ;; 0. try to call method to run telegram
+              ;; 1. try to find interface icon of telegram and click
+              ;; 2. if fail then try to find and start from cmd line
+              (error 'unimplemented-error)
+              nil)
+            (try-to-run-whatsup (&optional method)
+              (declare (ignore method))
+              ;; try to start whatsup or alternativies
+              (error 'unimplemented-error)
+              nil))
+          ;; else
+          tlg-wnd)))
+
+  (get-messenger-wid)
+
+  (define-condition firefox-wnd-not-found-error (error) ())
+
+  (defun get-browser-wnd ()
+    (let ((fox-wnd (search-wnd "Mozilla Firefox")))
+      (if (equal "" fox-wnd)
+          (restart-case (error 'firefox-wnd-not-found-error)
+            (try-to-run-firefox (&optional method)
+              ;; TODO: recovery strategyes:
+              ;; 0. try to call method to run firefox
+              ;; 1. try to find interface icon of firefox and click
+              ;; 2. if fail then try to find and start from cmd line
+              (error 'unimplemented-error)
+              nil)
+            (try-to-run-chrome (&optional method)
+              ;; try to start chrome or alternativies
+              (error 'unimplemented-error)
+              nil))
+          ;; else
+          fox-wnd)))
+
+  (defun ensure-browser-and-messenger-work-and-get-wnd-ids ()
+    (values (get-messenger-wid) (get-browser-wnd)))
+
+  (defun win-activate (wnd-id)
+    (sys (format nil "xdotool windowactivate --sync ~A" wnd-id)))
+
+  (defun get-wnd-geometry (wnd-id)
+    ;; получает размеры и позицию окна
+    ;; с помощью xdotool и возвращает список чисел,
+    ;; соответствующих этим размерам и позиции, превращая
+    ;; ---example-------
+    ;; Window 27262983
+    ;;   Position: 990,109 (screen: 0)
+    ;;   Geometry: 940x1016
+    ;; ---end-example---
+    ;; в => (990 109 940 1016)
+    (loop
+      for (one two)
+        in (mapcar
+            #'(lambda (str)
+                (multiple-value-bind (match groups)
+                    (cl-ppcre:scan-to-strings
+                     ":\\s+(\\d+)\\D(\\d+)"
+                     str)
+                  (map 'list #'identity groups)))
+            (cdr
+             (cl-ppcre:split
+              #\Newline
+              (sys (format
+                    nil "xdotool getwindowgeometry ~A"
+                    wnd-id)))))
+      append `(,(parse-integer one) ,(parse-integer one))))
+
+  ;; (get-wnd-geometry 27262983)
+
+  (let* ((geom (get-wnd-geometry 27262983))
+         (center-x (+ (floor (nth 2 geom) 2)
+                      (nth 0 geom)))
+         (center-y (+ (floor (nth 3 geom) )
+                      (nth 1 geom)))
+         )
+    (print (list geom center-x center-y)))
+
+  (defmacro with-active-wnd ((wnd-id) &body body)
+    `(progn
+       (win-activate ,wnd-id)
+       ,@body))
+
+  ;; (macroexpand-1 '(with-active-wnd (msg-wnd)
+  ;;                  (set-mouse-pos location)))
+
+
+  (defun set-mouse-pos (xx yy)
+    (sys (format nil "xdotool mousemove --sync ~A ~A" xx yy)))
+
+  (defun mouse-down (num)
+    (sys (format nil "xdotool mousedown --clearmodifiers ~A" num)))
+
+  (defun mouse-up (num)
+    (sys (format nil "xdotool mouseup --clearmodifiers ~A" num)))
+
+  (defun mouse-right-click ()
+    (set-mouse-down 3)
+    (set-mouse-up 3))
+
+  (defun mouse-click (key &optional (num 1))
+    (sys (format nil "xdotool click --clearmodifiers --repeat ~A ~A" num key)))
+
+  (defun mouse-click (key &optional (num 1))
+    (sys (format nil "xdotool click --clearmodifiers --repeat ~A ~A" num key)))
+
+  (defconstant +scroll-up+ 4)
+  (defconstant +scroll-down+ 5)
+
+  (defun scenario ()
+    (multiple-value-bind (msg-wnd bsr-wnd)
+        (ensure-browser-and-messenger-work-and-get-wnd-ids)
+      ;; loop
+      (with-active-wnd (msg-wnd)
+        (let* ((geom (get-wnd-geometry msg-wnd))
+               (center-x (+ (ash (nth 2 geom) -1)
+                            (nth 0 geom)))
+               (center-y (+ (ash (nth 3 geom) -1)
+                            (nth 1 geom))))
+          (print (list center-x center-y))
+          (set-mouse-pos center-x center-y)
+          (set-mouse-click +scroll-up+)
+        ))))
+
+  (print
+   (scenario))
+
+
+  ;; (defun firefox-ready-p (wid)
+  ;;   (if (equalp wid (sys "xdotool getactivewindow"))
+  ;;       nil
+  ;;       ;; t
+  ;;       nil
+  ;;       ))
+
+  ;; (define-condition firefox-not-ready-error (error)
+  ;;   ((text :initarg :text :reader text)))
+
+  ;; (defun ensure-firefox-ready (wid)
+  ;;   (tagbody
+  ;;    get-ready-firefox
+  ;;      (unless (firefox-ready-p wid)
+  ;;        (restart-case (error 'firefox-not-ready-error)
+  ;;          (wait-and-repeat (&optional (seconds 1) (attempt 0))
+  ;;            (format t ":: sleeping ~A seconds..~%" seconds)  (sleep seconds)
+  ;;            (format t ":: attempt ~A ..~%" attempt)  (go get-ready-firefox))
+  ;;          (repeat ()
+  ;;            (go get-ready-firefox))
+  ;;          (stop-scenario ()
+  ;;            (go failed)))
+  ;;        (return-from ensure-firefox-ready t))
+  ;;    failed
+  ;;      nil))
+
+
+      ;; (loop for attempt from 0 to 10 do
+      ;;   (with-active-wnd tlg
+      ;;     (let* ((snapshot (x-snapshot))
+      ;;            (location (get-channel-center snapshot)))
+      ;;       (set-mouse-pos location)
+      ;;       (scroll-up 50)
+      ;;       (store-msgs
+      ;;        (collect-msgs snapshot)))))
+
+            ;; ;; (win-activate wid)
+            ;; (unless (ensure-firefox-ready wid)
+            ;;   (return-from scenario nil))
+            ;; (unless (ensure-chat-gpt-ready)
+            ;;   (send-ai-request request)
+            ;;   (let* ((resp (receive-ai-responce))
+            ;;          (action (react-responce)))
+            ;;     (perfrom action)))))
+
+  ;; (let ((wait-and-repeat-count 1)
+  ;;       (wait-and-repeat-max-count 5))
+  ;;   (handler-bind
+  ;;       ((firefox-not-ready-error
+  ;;          #'(lambda (c)
+  ;;              (if (< wait-and-repeat-count wait-and-repeat-max-count)
+  ;;                  (progn
+  ;;                    (incf wait-and-repeat-count)
+  ;;                    (invoke-restart 'wait-and-repeat 1 wait-and-repeat-count))
+  ;;                  ;; else
+  ;;                  (format t ":: failed after ~A attempts | NEED HELP from operator~%"
+  ;;                          wait-and-repeat-count)))))
+  ;;     (unless (scenario)
+  ;;       (format t ":: stop-scenario~%"))))
+
   ;; (let* ((firefox  (sys "xdotool search --name \"Mozilla Firefox\"")))
   ;;   (sys (format nil "xdotool windowactivate --sync ~A" firefox))
   ;;   (sys "xdotool key --clearmodifiers ctrl+t")
@@ -2851,66 +3062,6 @@ http://algolist.ru/graphics/fill.php
   ;;   (sys "xdotool key KP_Enter")
   ;;   (sys "xdotool key --clearmodifiers ctrl+XK_semicolon")
   ;;   )
-
-  (defun get-firefox ()
-    (sys "xdotool search --name \"Mozilla Firefox\""))
-
-  (defun win-activate (id)
-    (sys (format nil "xdotool windowactivate --sync ~A" id)))
-
-  (defun firefox-ready-p (wid)
-    (if (equalp wid (sys "xdotool getactivewindow"))
-        nil
-        ;; t
-        nil
-        ))
-
-  (define-condition firefox-not-ready-error (error)
-    ((text :initarg :text :reader text)))
-
-  (defun ensure-firefox-ready (wid)
-    (tagbody
-     get-ready-firefox
-       (unless (firefox-ready-p wid)
-         (restart-case (error 'firefox-not-ready-error)
-           (wait-and-repeat (&optional (seconds 1) (attempt 0))
-             (format t ":: sleeping ~A seconds..~%" seconds)  (sleep seconds)
-             (format t ":: attempt ~A ..~%" attempt)  (go get-ready-firefox))
-           (repeat ()
-             (go get-ready-firefox))
-           (stop-scenario ()
-             (go failed)))
-         (return-from ensure-firefox-ready t))
-     failed
-       nil))
-
-  (defun scenario ()
-    (let ((wid (get-firefox)))
-      ;; (win-activate wid)
-      (when (ensure-firefox-ready wid)
-        (let ((chat-gpt-tab "(find-control-position 'chat-gpt-tab)"))
-          (print chat-gpt-tab)
-          ;;   (click chat-gpt-tab)
-          ;;   (unless (chat-gpt-ready)
-          ;;     (restart-case (error 'chat-gpt-not-ready)
-          ;;       (use-value (value) value)
-          ;;       (reparse-entry (fixed-text) (parse-log-entry fixed-text))))
-          ))
-      (format t ":: stop-scenario~%")))
-
-  (let ((wait-and-repeat-count 1)
-        (wait-and-repeat-max-count 5))
-    (handler-bind
-        ((firefox-not-ready-error
-           #'(lambda (c)
-               (if (< wait-and-repeat-count wait-and-repeat-max-count)
-                   (progn
-                     (incf wait-and-repeat-count)
-                     (invoke-restart 'wait-and-repeat 1 wait-and-repeat-count))
-                   ;; else
-                   (format t ":: failed after ~A attempts | NEED HELP from operator~%"
-                           wait-and-repeat-count)))))
-      (scenario)))
 #+END_SRC
 
 Пример: сфокусировать адресную строку firefox
