@@ -2835,6 +2835,8 @@ http://algolist.ru/graphics/fill.php
 
 #+BEGIN_SRC lisp
   (ql:quickload "cl-ppcre")
+  ;; sudo apt install wmctrl
+  ;; sudo apt-get install gawk
 
   (defun trim (str)
     (cl-ppcre:regex-replace-all "^\\s+|\\s+$" str ""))
@@ -2851,6 +2853,8 @@ http://algolist.ru/graphics/fill.php
     ;; непрочитанных сообщений в скобках, поэтому ищем регуляркой
     ;; для преобразования из хекса в десятичное нужно поставить gawk:
     ;; sudo apt-get install gawk
+    ;; Плюс надо поставить wmctrl:
+    ;; sudo apt install wmctrl
     (sys "wmctrl -l | awk '/\\([0-9]*\\)/ {print strtonum($1)}'"))
 
   ;; (search-wnd-special-case-for-tlg)
@@ -2879,7 +2883,7 @@ http://algolist.ru/graphics/fill.php
           ;; else
           tlg-wnd)))
 
-  (get-messenger-wid)
+  ;; (get-messenger-wid)
 
   (define-condition firefox-wnd-not-found-error (error) ())
 
@@ -2934,15 +2938,8 @@ http://algolist.ru/graphics/fill.php
                     wnd-id)))))
       append `(,(parse-integer one) ,(parse-integer one))))
 
-  ;; (get-wnd-geometry 27262983)
+  ;; (get-wnd-geometry (search-wnd-special-case-for-tlg))
 
-  (let* ((geom (get-wnd-geometry 27262983))
-         (center-x (+ (floor (nth 2 geom) 2)
-                      (nth 0 geom)))
-         (center-y (+ (floor (nth 3 geom) )
-                      (nth 1 geom)))
-         )
-    (print (list geom center-x center-y)))
 
   (defmacro with-active-wnd ((wnd-id) &body body)
     `(progn
@@ -2973,6 +2970,7 @@ http://algolist.ru/graphics/fill.php
     (sys (format nil "xdotool click --clearmodifiers --repeat ~A ~A" num key)))
 
   (defconstant +scroll-up+ 4)
+
   (defconstant +scroll-down+ 5)
 
   (defun scenario ()
@@ -2987,8 +2985,7 @@ http://algolist.ru/graphics/fill.php
                             (nth 1 geom))))
           (print (list center-x center-y))
           (set-mouse-pos center-x center-y)
-          (set-mouse-click +scroll-up+)
-        ))))
+          (mouse-click +scroll-up+)))))
 
   (print
    (scenario))
