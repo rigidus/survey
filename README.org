@@ -990,7 +990,7 @@ How to make screenshot:
             (zpng:data-array image)))))
 
   ;; (x-snapshot
-  ;;  :path "x-snapshot-true-color-telegram.png")
+  ;;  :path "x-snapshot-true-color-telegram2.png")
 #+END_SRC
 
 * Conv8x8
@@ -2879,7 +2879,7 @@ http://algolist.ru/graphics/fill.php
           ;; else
           tlg-wnd)))
 
-  (get-messenger-wid)
+  ;; (get-messenger-wid)
 
   (define-condition firefox-wnd-not-found-error (error) ())
 
@@ -2932,17 +2932,9 @@ http://algolist.ru/graphics/fill.php
               (sys (format
                     nil "xdotool getwindowgeometry ~A"
                     wnd-id)))))
-      append `(,(parse-integer one) ,(parse-integer one))))
+      append `(,(parse-integer one) ,(parse-integer two))))
 
   ;; (get-wnd-geometry 27262983)
-
-  (let* ((geom (get-wnd-geometry 27262983))
-         (center-x (+ (floor (nth 2 geom) 2)
-                      (nth 0 geom)))
-         (center-y (+ (floor (nth 3 geom) )
-                      (nth 1 geom)))
-         )
-    (print (list geom center-x center-y)))
 
   (defmacro with-active-wnd ((wnd-id) &body body)
     `(progn
@@ -2975,24 +2967,32 @@ http://algolist.ru/graphics/fill.php
   (defconstant +scroll-up+ 4)
   (defconstant +scroll-down+ 5)
 
+
   (defun scenario ()
-    (multiple-value-bind (msg-wnd bsr-wnd)
-        (ensure-browser-and-messenger-work-and-get-wnd-ids)
-      ;; loop
-      (with-active-wnd (msg-wnd)
-        (let* ((geom (get-wnd-geometry msg-wnd))
-               (center-x (+ (ash (nth 2 geom) -1)
-                            (nth 0 geom)))
-               (center-y (+ (ash (nth 3 geom) -1)
-                            (nth 1 geom))))
-          (print (list center-x center-y))
-          (set-mouse-pos center-x center-y)
-          (set-mouse-click +scroll-up+)
-        ))))
+    (let ((prev-snapshot))
+      (multiple-value-bind (msg-wnd bsr-wnd)
+          (ensure-browser-and-messenger-work-and-get-wnd-ids)
+        ;; loop
+        (let ((new-msgs))
+          (with-active-wnd (msg-wnd)
+            (let* ((geom (get-wnd-geometry msg-wnd))
+                   (center-x (+ (ash (nth 2 geom) -1)  (nth 0 geom)))
+                   (center-y (+ (ash (nth 3 geom) -1)  (nth 1 geom))))
+              (set-mouse-pos center-x center-y)
+              (set-mouse-click +scroll-up+)
+              (let* ((new-pic  (x-snapshot))
+                     (diff     (snapshot-diff prev-snapshot new)))
+                (setf new-msgs (extract-msgs diff)))))
+          (with-active-wnd (bsr-wnd)
+            (ensure-gpt-ready)
+            (loop for msg in new-msgs do
+              (send-to-gpt (make-prompt msg))
+              (if (correct? (receive-gen-result))
+                  (send-answer (make-answer)))))))))
+
 
   (print
    (scenario))
-
 
   ;; (defun firefox-ready-p (wid)
   ;;   (if (equalp wid (sys "xdotool getactivewindow"))
