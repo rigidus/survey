@@ -2972,6 +2972,56 @@ http://algolist.ru/graphics/fill.php
 
   (defconstant +scroll-down+ 5)
 
+  (defun xor-img (old-img new-img &key
+                                    (old-start-y 0)  (old-end-y nil)
+                                    (new-start-y 0)  (new-end-y nil))
+    (destructuring-bind (old-height old-width old-colors) (array-dimensions old-img)
+      (destructuring-bind (new-height new-width new-colors) (array-dimensions new-img)
+        (let ((colors (if (= old-colors new-colors) old-colors
+                          ;; else
+                          (error 'colors-mismatch-in-xor-img))))
+          (when (or (null old-end-y)
+                    (< old-height old-end-y))
+            (setf old-end-y old-height))
+          (when (or (null new-end-y)
+                    (< new-height new-end-y))
+            (setf new-end-y new-height))
+          (let ((xor-img (make-array (list old-height old-width colors)
+                                     :element-type '(unsigned-byte 8))))
+            (do ((old-y  old-start-y  (incf old-y))
+                 (new-y   new-start-y   (incf new-y))
+                 (xor-y   0             (incf xor-y)))
+                ((or (>= old-y old-end-y)
+                     (>= new-y  new-end-y)))
+              (do ((old-x  0  (incf old-x))
+                   (new-x   0  (incf new-x))
+                   (xor-x   0  (incf xor-x)))
+                  ((or (>= old-x old-width)
+                       (>= new-x  new-width)))
+                (do ((zz  0   (incf zz)))
+                    ((=   zz  colors))
+                  (setf (aref xor-img xor-y xor-x zz)
+                        (logxor (aref old-img old-y old-x zz)
+                                (aref new-img  new-y  new-x  zz))))))
+            xor-img)))))
+
+  ;; test
+  (progn
+    (ql:quickload "png")
+    (let* ((old (with-open-file (old "old.png" :element-type '(unsigned-byte 8))
+                  (png:decode old)))
+           (new  (with-open-file (new "new.png" :element-type '(unsigned-byte 8))
+                   (png:decode new)))
+           (xor  (xor-img old new)))
+      (with-open-file (output "xor.png"
+                              :element-type '(unsigned-byte 8)
+                              :direction :output :if-exists :supersede)
+        (png:encode xor output))))
+
+
+  (defun diff-snapshot (prev-snapshot new-snapshot)
+    "TODO: unimplemented"
+    new-snapshot)
 
   (defun scenario ()
     (let ((prev-snapshot))
@@ -2981,19 +3031,29 @@ http://algolist.ru/graphics/fill.php
         (let ((new-msgs))
           (with-active-wnd (msg-wnd)
             (let* ((geom (get-wnd-geometry msg-wnd))
-                   (center-x (+ (ash (nth 2 geom) -1)  (nth 0 geom)))
-                   (center-y (+ (ash (nth 3 geom) -1)  (nth 1 geom))))
+                   (pos-x (nth 0 geom))
+                   (pos-y (nth 1 geom))
+                   (len-x (nth 2 geom))
+                   (len-y (nth 3 geom))
+                   (center-x (+ (ash len-x -1) pos-x))
+                   (center-y (+ (ash len-y -1) pos-y)))
               (set-mouse-pos center-x center-y)
               (set-mouse-click +scroll-up+)
-              (let* ((new-pic  (x-snapshot))
-                     (diff     (snapshot-diff prev-snapshot new)))
-                (setf new-msgs (extract-msgs diff)))))
-          (with-active-wnd (bsr-wnd)
-            (ensure-gpt-ready)
-            (loop for msg in new-msgs do
-              (send-to-gpt (make-prompt msg))
-              (if (correct? (receive-gen-result))
-                  (send-answer (make-answer)))))))))
+              (let* ((snapshot (x-snapshot :x pos-x :y pos-y :width len-x :height len-y
+                                           :path "test-snapshot"))
+                     ;; (diff-snapshot (diff-snapshot prev-snapshot new-snapshot))
+                     )
+              ;;   (setf new-msgs (extract-msgs diff))
+                nil
+                )
+              ))
+          ;; (with-active-wnd (bsr-wnd)
+          ;;   (ensure-gpt-ready)
+          ;;   (loop for msg in new-msgs do
+          ;;     (send-to-gpt (make-prompt msg))
+          ;;     (if (correct? (receive-gen-result))
+          ;;         (send-answer (make-answer)))))
+          ))))
 
 
   (print
