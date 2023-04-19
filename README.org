@@ -3081,6 +3081,102 @@ done
 
 https://www.semicomplete.com/projects/keynav/
 
+* Keccak
+
+#+BEGIN_SRC python :tangle test.py
+  from eth_account import Account
+  # import secrets
+  # priv = secrets.token_hex(32)
+  priv = 'f4a2b939592564feb35ab10a8e04f6f2fe0943579fb3c9c33505298978b74893'
+  private_key = "0x" + priv
+  print ("priv-key:", private_key)
+  acct = Account.from_key(private_key)
+  print("Address:", acct.address)
+#+END_SRC
+
+
+#+BEGIN_SRC lisp :tangle test.lisp
+  ;; Загрузите библиотеку secp256k1, если она не загружена
+  (ql:quickload :secp256k1)
+
+  ;; Импортируйте необходимые пакеты
+  (use-package :secp256k1)
+  (use-package :alexandria)
+  (use-package :cl-eth)
+  (ql:quickload :ironclad)
+
+  (defun hex-str-to-octets (par)
+    (let ((flip)
+          (acc))
+      (loop for sym across par do
+        (if (not flip)
+            (setf flip sym)
+            (progn
+              (push (coerce (list flip sym) 'string) acc)
+              (setf flip nil))))
+      (coerce
+       (loop for hex in (reverse acc)
+             collect (parse-integer hex :radix 16))
+       '(VECTOR (UNSIGNED-BYTE 8)))))
+
+  (defun octets-to-hex-str (par)
+    (format nil "~{~A~}"
+            (loop for sym across par
+                  collect (format nil "~2,'0x" sym))))
+
+  (defun keccak-256-hash (data)
+    (let* ((digest (ironclad:make-digest :sha3/256 ;; keccak/256
+                                         ))
+           (hash (ironclad:digest-sequence digest data)))
+      hash))
+
+  ;; (octets-to-hex-str
+  ;;  (keccak-256-hash
+  ;;   (hex-str-to-octets
+  ;;    "04345f1a86ebf24a6dbeff80f6a2a574d46efaa3ad3988de94aa68b695f09db9ddca37439f99548da0a1fe4acf4721a945a599a5d789c18a06b20349e803fdbbe3")))
+
+  ;; example hash keccak
+  (let* ((data "")
+         (hash (keccak-256-hash (ironclad:ascii-string-to-byte-array data))))
+    (format t "Data: '~a'~%" data)
+    (format t "Keccak-256 Hash: ~a~%" (ironclad:byte-array-to-hex-string hash)))
+
+
+  (defun get-eth-addr (priv-key-str digest)
+    (let* ((priv-key-octets  (hex-str-to-octets priv-key-str))
+           (priv-key         (secp256k1:make-secret-key priv-key-octets)))
+      (secret-key-verify *priv-key*)
+      (let* ((pub-key        (secp256k1:public-key-create priv-key))
+             (pub-key-octets (secp256k1:public-key-serialize pub-key))
+             (hash           (ironclad:digest-sequence digest pub-key-octets))
+             ;; (address        (subseq hash 12 32))
+             )
+        ;; (format t "public-key-octets: ~A~%" (octets-to-hex-str pub-key-octets))
+        ;; (format t "keccak-result: ~A~%" (octets-to-hex-str hash))
+        ;; (format t "address: ~A~%" (octets-to-hex-str address))
+        ;; (octets-to-hex-str address)
+        (octets-to-hex-str hash)
+        )))
+
+  (assert
+   (equal "d5e099c71B797516c10ED0F0d895f429C2781142"
+          (get-eth-addr "f4a2b939592564feb35ab10a8e04f6f2fe0943579fb3c9c33505298978b74893"
+                        (ironclad:make-digest :keccak/256)
+                        )
+
+          ))
+
+  (loop for digest-name in (ironclad:list-all-digests) :do
+    (let* ((digest (ironclad:make-digest digest-name))
+           (priv-key-str "f4a2b939592564feb35ab10a8e04f6f2fe0943579fb3c9c33505298978b74893")
+           (result (get-eth-addr priv-key-str digest)))
+      (print (list digest-name result))
+      ;; (if (equal "d5e099c71B797516c10ED0F0d895f429C2781142" result)
+      ;;     (print (list "bingo" digest result))
+      ;;     (print (list digest result)))
+      ))
+#+END_SRC
+
 * Supercompile
 
 #+BEGIN_SRC lisp
