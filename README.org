@@ -934,6 +934,8 @@ How to make screenshot:
        (xlib:screen-width s)
        (xlib:screen-height s))))
 
+  ;; (x-size)
+
   (defparameter *default-x* 0)
   (defparameter *default-y* 0)
   (defparameter *default-width* 800)
@@ -3018,35 +3020,71 @@ http://algolist.ru/graphics/fill.php
                               :direction :output :if-exists :supersede)
         (png:encode xor output))))
 
+  (defun get-wnd-params (wnd)
+    (let* ((geom (get-wnd-geometry wnd))
+           (pos-x (nth 0 geom))
+           (pos-y (nth 1 geom))
+           (len-x (min (nth 2 geom) *default-width*))
+           (len-y (min (nth 3 geom) *default-height*))
+           (center-x (+ (ash len-x -1) pos-x))
+           (center-y (+ (ash len-y -1) pos-y)))
+      (values pos-x pos-y len-x len-y center-x center-y)))
+
+  (defun x-png (yy xx height width &optional (channels 3) (bit-depth 8))
+    (let* ((img (x-snapshot :x xx :y yy :width width :height height))
+           (new (png:make-image height width channels bit-depth)))
+      (do* ((yy 0  (+ 1 yy)))
+           ((>= yy height))
+        (declare (type fixnum yy))
+        (do* ((xx 0 (+ 1 xx)))
+             ((>= xx width))
+          (declare (type fixnum xx))
+          (dotimes (zz channels)
+            (setf (aref new yy xx zz)
+                  (aref img yy xx zz)))))
+      new))
 
   (defun diff-snapshot (prev-snapshot new-snapshot)
     "TODO: unimplemented"
     new-snapshot)
 
   (defun scenario ()
-    (let ((prev-snapshot))
+    (let ((prev-snapshot) (curr-snapshot))
       (multiple-value-bind (msg-wnd bsr-wnd)
           (ensure-browser-and-messenger-work-and-get-wnd-ids)
         ;; loop
         (let ((new-msgs))
           (with-active-wnd (msg-wnd)
-            (let* ((geom (get-wnd-geometry msg-wnd))
-                   (pos-x (nth 0 geom))
-                   (pos-y (nth 1 geom))
-                   (len-x (nth 2 geom))
-                   (len-y (nth 3 geom))
-                   (center-x (+ (ash len-x -1) pos-x))
-                   (center-y (+ (ash len-y -1) pos-y)))
-              (set-mouse-pos center-x center-y)
-              (set-mouse-click +scroll-up+)
-              (let* ((snapshot (x-snapshot :x pos-x :y pos-y :width len-x :height len-y
-                                           :path "test-snapshot"))
-                     ;; (diff-snapshot (diff-snapshot prev-snapshot new-snapshot))
-                     )
-              ;;   (setf new-msgs (extract-msgs diff))
-                nil
-                )
-              ))
+            (multiple-value-bind (pos-x pos-y len-x len-y center-x center-y)
+                (get-wnd-params msg-wnd)
+              (let* ((msg-off-x 98)
+                     (msg-off-y 109)
+                     (xx (+ pos-x msg-off-x))
+                     (yy (+ pos-y msg-off-y))
+                     (width  (+ 26 (- len-x pos-x msg-off-x)))
+                     (height (- len-y pos-y msg-off-y 5)))
+                ;; first run
+                (unless prev-snapshot
+                  (setf prev-snapshot
+                        (x-png yy xx height width)))
+                ;; scroll
+                (set-mouse-pos center-x center-y)
+                (mouse-click +scroll-up+)
+                ;; current snapshot
+                (setf curr-snapshot
+                      (x-png yy xx height width))
+                ;; save snapshots
+                (loop for idx from 0 to 90 do
+                  (let ((fname (format nil "f-~A" (gensym)))
+                        (xor (xor-img prev-snapshot curr-snapshot
+                                      :old-start-y 0    :old-end-y nil
+                                      :new-start-y idx  :new-end-y nil)))
+                    (with-open-file (output fname :element-type '(unsigned-byte 8)
+                                                  :direction :output :if-exists :supersede)
+                      (png:encode xor output))))
+                ;; (diff-snapshot (diff-snapshot prev-snapshot new-snapshot))
+                ;; (setf new-msgs (extract-msgs diff))
+                )))
           ;; (with-active-wnd (bsr-wnd)
           ;;   (ensure-gpt-ready)
           ;;   (loop for msg in new-msgs do
@@ -3055,9 +3093,19 @@ http://algolist.ru/graphics/fill.php
           ;;         (send-answer (make-answer)))))
           ))))
 
-
   (print
-   (scenario))
+   (progn
+     (init-defaults)
+     (scenario)))
+
+  (let* ((img (with-open-file (input "test-snapshot2.png" :element-type '(unsigned-byte 8))
+                (png:decode input)))
+         (width      (the fixnum (logand -8 (png:image-width img))))
+         (height     (the fixnum (logand -8 (png:image-height img))))
+         (channels   (the fixnum (png:image-channels img)))
+         (bit-depth  (the fixnum (png:image-bit-depth img))))
+    (print (list height width channels bit-depth)))
+
 
   ;; (defun firefox-ready-p (wid)
   ;;   (if (equalp wid (sys "xdotool getactivewindow"))
@@ -4848,7 +4896,7 @@ lisp
 
   "wntriscoming"
 
-* File Destionation
+* File Destination
 
 Таким же образом мы будем танглить путь для сохранения файлов
 
